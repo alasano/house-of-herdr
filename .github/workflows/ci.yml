@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  checks:
+    # macOS: the plugin is macOS-only, node-hid builds natively, and the
+    # tapkey helper needs the Apple toolchain.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # bin/tapkey is committed and runs with the Accessibility permission, so
+      # prove it is the artifact src/tapkey.c actually produces. The compile is
+      # bit-for-bit reproducible when the output basename matches, because the
+      # linker embeds it in the ad-hoc signature.
+      - name: verify the committed tapkey matches its source
+        working-directory: packages/codex-micro
+        run: |
+          mkdir -p "$RUNNER_TEMP/tapkey-check"
+          cc -O2 -arch arm64 -arch x86_64 \
+            -o "$RUNNER_TEMP/tapkey-check/tapkey" \
+            src/tapkey.c -framework ApplicationServices -Wall -Wextra -Werror
+          if ! cmp -s bin/tapkey "$RUNNER_TEMP/tapkey-check/tapkey"; then
+            echo "bin/tapkey does not match src/tapkey.c; run: npm run build:tapkey"
+            shasum -a 256 bin/tapkey "$RUNNER_TEMP/tapkey-check/tapkey"
+            exit 1
+          fi
+
+      # Herdr installs plugins with npm, which ignores pnpm-lock.yaml, so the
+      # committed npm lockfile is what real installs resolve against.
+      - name: verify the plugin installs the way herdr installs it
+        working-directory: packages/codex-micro
+        run: npm ci --ignore-scripts

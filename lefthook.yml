@@ -4,18 +4,27 @@ pre-commit:
   parallel: true
   jobs:
     - name: prettier
-      glob: '**/*.{ts,js,json,md,yaml}'
+      glob: "**/*.{ts,js,json,md,yaml}"
       run: pnpm prettier --write {staged_files}
       stage_fixed: true
 
     - name: oxlint
-      glob: '**/*.{ts,js}'
+      glob: "**/*.{ts,js}"
       run: pnpm oxlint {staged_files}
 
 pre-push:
+  parallel: true
   jobs:
+    # pre-commit only lints the files being staged, so the whole-repo lint and
+    # the tests get their gate here.
+    - name: lint
+      run: pnpm lint
+
     - name: typecheck
       run: pnpm typecheck
+
+    - name: test
+      run: pnpm test
 
 commit-msg:
   commands:

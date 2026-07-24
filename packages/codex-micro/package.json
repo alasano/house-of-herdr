@@ -5,19 +5,21 @@
   "description": "Agent status lights and controls on the Work Louder Codex Micro",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "build:tapkey": "cc -O2 -arch arm64 -arch x86_64 -o bin/tapkey src/tapkey.c -framework ApplicationServices",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "node-hid": "^3.4.0"
+    "node-hid": "^3.4.0",
+    "string-width": "^8.2.2"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^22.20.1",
     "typescript": "^7.0.2"
-  }
+  },
+  "license": "MIT"
 }

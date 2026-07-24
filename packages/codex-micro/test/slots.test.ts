@@ -110,4 +110,78 @@ describe("sticky policy", () => {
     const slots = assignSlots(EMPTY, agents, "sticky");
     expect(slots).toEqual(["blocked", "working", "idle", null, null, null]);
   });
+
+  it("admits every needier newcomer in one pass, not just the first", () => {
+    // Admission continues down the sorted candidates until one fails to beat
+    // the weakest occupant. Stopping after the first eviction would leave the
+    // second blocked agent dark while an idle one kept its key.
+    const six = [
+      agent("s1", "working", 1),
+      agent("s2", "working", 2),
+      agent("s3", "idle", 3),
+      agent("s4", "idle", 4),
+      agent("s5", "idle", 5),
+      agent("s6", "idle", 6),
+    ];
+    const slots = assignSlots(EMPTY, six, "sticky");
+    const after = assignSlots(
+      slots,
+      [...six, agent("n1", "blocked", 7), agent("n2", "blocked", 8)],
+      "sticky",
+    );
+    expect(after).toContain("n1");
+    expect(after).toContain("n2");
+    // Exactly the two oldest idle agents lost their keys.
+    expect(after.filter((id) => id !== null).sort()).toEqual([
+      "n1",
+      "n2",
+      "s1",
+      "s2",
+      "s5",
+      "s6",
+    ]);
+  });
+
+  it("stops admitting once a candidate cannot beat the weakest occupant", () => {
+    const six = [
+      agent("s1", "blocked", 1),
+      agent("s2", "blocked", 2),
+      agent("s3", "blocked", 3),
+      agent("s4", "blocked", 4),
+      agent("s5", "blocked", 5),
+      agent("s6", "blocked", 6),
+    ];
+    const slots = assignSlots(EMPTY, six, "sticky");
+    const after = assignSlots(
+      slots,
+      [...six, agent("n1", "blocked", 7), agent("n2", "done", 8)],
+      "sticky",
+    );
+    expect(after).toEqual(slots);
+  });
+
+  it("refills a hole left by a departed agent with the neediest newcomer", () => {
+    const six = [
+      agent("s1", "idle", 1),
+      agent("s2", "idle", 2),
+      agent("s3", "idle", 3),
+      agent("s4", "idle", 4),
+      agent("s5", "idle", 5),
+      agent("s6", "idle", 6),
+    ];
+    const slots = assignSlots(EMPTY, six, "sticky");
+    const holeIndex = slots.indexOf("s3");
+    const remaining = six.filter((a) => a.terminalId !== "s3");
+    const after = assignSlots(
+      slots,
+      [...remaining, agent("n1", "idle", 7), agent("n2", "blocked", 8)],
+      "sticky",
+    );
+    // The vacated key takes the neediest waiting agent, and nothing else moves.
+    expect(after[holeIndex]).toBe("n2");
+    expect(after.filter((id) => id !== null)).toHaveLength(6);
+    slots.forEach((id, i) => {
+      if (i !== holeIndex) expect(after[i]).toBe(id);
+    });
+  });
 });

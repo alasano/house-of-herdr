@@ -113,4 +113,56 @@ describe("resolveBindings", () => {
       /bindings.ACT07: unknown key "florb"/,
     );
   });
+
+  it("rejects holds on inputs that never report a release", () => {
+    // Dial rotation and joystick sectors fire once; a hold bound there could
+    // only ever be a 30ms blip, which is not what the author asked for.
+    expect(() => resolveBindings({ ENC_CW: { key: "rcmd" } })).toThrow(
+      /bindings.ENC_CW: hold bindings need a release edge/,
+    );
+    expect(() =>
+      resolveBindings({ ENC_CC: { key: "cmd+v", hold: true } }),
+    ).toThrow(/bindings.ENC_CC: hold bindings need a release edge/);
+    expect(() =>
+      resolveBindings({ joystick: { up: { key: "rcmd" } } }),
+    ).toThrow(/bindings.joystick.up: hold bindings need a release edge/);
+    // The dial click does have both edges.
+    expect(
+      resolveBindings({ ENC_CLK: { key: "rcmd" } }).buttons.ENC_CLK,
+    ).toEqual({
+      kind: "key",
+      combo: { keyCode: 54, modifiers: 0 },
+      hold: true,
+    });
+    // Taps remain fine on the edgeless inputs.
+    expect(resolveBindings({ ENC_CW: { key: "f13" } }).buttons.ENC_CW).toEqual({
+      kind: "key",
+      combo: { keyCode: 105, modifiers: 0 },
+      hold: false,
+    });
+  });
+
+  it("rejects a non-boolean hold instead of silently tapping", () => {
+    expect(() =>
+      resolveBindings({ ACT10: { key: "f13", hold: "true" } }),
+    ).toThrow(/bindings.ACT10: "hold" must be true or false/);
+  });
+
+  it("rejects an object declaring more than one action", () => {
+    expect(() =>
+      resolveBindings({ ACT10: { key: "f13", "herdr-key": "esc" } }),
+    ).toThrow(/bindings.ACT10: expected exactly one of/);
+  });
+
+  it("rejects an exec command that would crash the spawn", () => {
+    expect(() => resolveBindings({ ACT10: { exec: [""] } })).toThrow(
+      /bindings.ACT10: exec command must not be empty/,
+    );
+    expect(() => resolveBindings({ ACT10: { exec: ["  "] } })).toThrow(
+      /bindings.ACT10: exec command must not be empty/,
+    );
+    expect(() => resolveBindings({ ACT10: { exec: ["open", 5] } })).toThrow(
+      /bindings.ACT10: exec must be an array of strings/,
+    );
+  });
 });

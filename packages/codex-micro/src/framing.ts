@@ -4,6 +4,9 @@ export const REPORT_ID = 6;
 export const CHANNEL_RPC = 2;
 const REPORT_SIZE = 64;
 const MAX_PAYLOAD = 61;
+const HEADER_SIZE = 3;
+// A message that never terminates must not grow the buffer without bound.
+const MAX_BUFFERED = 64 * 1024;
 
 export function encodeMessage(message: string): Buffer[] {
   const bytes = Buffer.from(message, "utf8");
@@ -14,7 +17,7 @@ export function encodeMessage(message: string): Buffer[] {
     report[0] = REPORT_ID;
     report[1] = CHANNEL_RPC;
     report[2] = chunk.length;
-    chunk.copy(report, 3);
+    chunk.copy(report, HEADER_SIZE);
     reports.push(report);
   }
   return reports;
@@ -26,23 +29,28 @@ export interface FrameMessage {
 }
 
 // Device-to-host messages are newline-terminated and may span reports. macOS
-// delivers input reports with the report id as byte 0; strip it when present.
-// Buffers raw bytes per channel so multibyte UTF-8 characters crossing a
-// report boundary decode correctly.
+// (the only supported platform) delivers numbered input reports with the
+// report id as byte 0, so a report that does not start with it is malformed
+// rather than an alternate layout. Buffers raw bytes per channel so multibyte
+// UTF-8 characters crossing a report boundary decode correctly.
 export class Reassembler {
   private buffers = new Map<number, Buffer>();
 
   push(data: Buffer): FrameMessage[] {
-    const off = data[0] === REPORT_ID ? 1 : 0;
-    const channel = data[off] ?? 0;
-    const length = data[off + 1] ?? 0;
-    const payload = data.subarray(off + 2, off + 2 + length);
+    if (data.length < HEADER_SIZE || data[0] !== REPORT_ID) return [];
+    const channel = data[1]!;
+    const length = data[2]!;
+    // The device declares its payload length; a length past the end of the
+    // report, or past the frame capacity, would otherwise pull in zero
+    // padding and poison the next message on that channel.
+    if (length > MAX_PAYLOAD || HEADER_SIZE + length > data.length) return [];
+    const payload = data.subarray(HEADER_SIZE, HEADER_SIZE + length);
     let buffer = Buffer.concat([
       this.buffers.get(channel) ?? Buffer.alloc(0),
       payload,
     ]);
     const messages: FrameMessage[] = [];
-    let newline;
+    let newline: number;
     while ((newline = buffer.indexOf(0x0a)) !== -1) {
       messages.push({
         channel,
@@ -50,7 +58,10 @@ export class Reassembler {
       });
       buffer = buffer.subarray(newline + 1);
     }
-    this.buffers.set(channel, buffer);
+    this.buffers.set(
+      channel,
+      buffer.length > MAX_BUFFERED ? Buffer.alloc(0) : buffer,
+    );
     return messages;
   }
 

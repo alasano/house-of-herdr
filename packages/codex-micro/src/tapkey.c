@@ -6,12 +6,20 @@
 // modifier press listen for. "check" only verifies the Accessibility
 // permission. Requires Accessibility to post.
 #include <ApplicationServices/ApplicationServices.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+// kCGEventFlagMaskNonCoalesced. The SDK documents this bit for mouse and pen
+// movement, but the value comes from captures of the vendor app's own key
+// synthesis and is what the working hold path posts today, so it stays.
 #define FLAG_NON_COALESCED 0x100
+
+#define MODIFIER_MASK_MAX 15
+#define KEYCODE_MAX 0xffff
+#define TAP_HOLD_US 30000
 
 // kVK_* modifier keycodes with their event flag and NX device-specific bit.
 static const struct {
@@ -38,8 +46,23 @@ static CGEventFlags mask_to_flags(int mask) {
   return flags;
 }
 
-static void post(CGKeyCode code, bool down, CGEventFlags flags) {
+static bool parse_long(const char *text, long min, long max, long *out) {
+  char *end = NULL;
+  errno = 0;
+  long value = strtol(text, &end, 10);
+  if (errno != 0 || end == text || *end != '\0' || value < min || value > max) {
+    return false;
+  }
+  *out = value;
+  return true;
+}
+
+static bool post(CGKeyCode code, bool down, CGEventFlags flags) {
   CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down);
+  if (event == NULL) {
+    fprintf(stderr, "could not create a keyboard event for keycode %u\n", code);
+    return false;
+  }
   for (size_t i = 0; i < sizeof(MODIFIERS) / sizeof(MODIFIERS[0]); i++) {
     if (MODIFIERS[i].code == code) {
       CGEventSetType(event, kCGEventFlagsChanged);
@@ -47,34 +70,59 @@ static void post(CGKeyCode code, bool down, CGEventFlags flags) {
                                   : FLAG_NON_COALESCED);
       CGEventPost(kCGHIDEventTap, event);
       CFRelease(event);
-      return;
+      return true;
     }
   }
-  if (down && flags != 0) {
+  // Both edges carry the combo's modifiers. Setting them only on the press
+  // left the matching release without them, so an app watching for the end of
+  // a held combo saw a different event than the one that started it.
+  if (flags != 0) {
     CGEventSetFlags(event, flags | FLAG_NON_COALESCED);
   }
   CGEventPost(kCGHIDEventTap, event);
   CFRelease(event);
+  return true;
 }
 
 int main(int argc, char **argv) {
-  if (argc < 2) return 2;
+  if (argc < 2) {
+    fprintf(stderr,
+            "usage: tapkey <keycode> [tap|down|up|check] [modifier-mask]\n");
+    return 2;
+  }
   const char *mode = argc > 2 ? argv[2] : "tap";
   if (!AXIsProcessTrusted()) {
     fprintf(stderr, "accessibility permission not granted\n");
     return 3;
   }
+  // Checked before the keycode is parsed: callers pass a dummy keycode.
   if (strcmp(mode, "check") == 0) return 0;
-  CGKeyCode code = (CGKeyCode)atoi(argv[1]);
-  CGEventFlags flags = mask_to_flags(argc > 3 ? atoi(argv[3]) : 0);
+
+  long keycode = 0;
+  if (!parse_long(argv[1], 0, KEYCODE_MAX, &keycode)) {
+    fprintf(stderr, "invalid keycode: %s\n", argv[1]);
+    return 2;
+  }
+  long mask = 0;
+  if (argc > 3 && !parse_long(argv[3], 0, MODIFIER_MASK_MAX, &mask)) {
+    fprintf(stderr, "invalid modifier mask: %s\n", argv[3]);
+    return 2;
+  }
+
+  CGKeyCode code = (CGKeyCode)keycode;
+  CGEventFlags flags = mask_to_flags((int)mask);
   if (strcmp(mode, "down") == 0) {
-    post(code, true, flags);
+    if (!post(code, true, flags)) return 4;
   } else if (strcmp(mode, "up") == 0) {
-    post(code, false, flags);
+    if (!post(code, false, flags)) return 4;
+  } else if (strcmp(mode, "tap") == 0) {
+    if (!post(code, true, flags)) return 4;
+    usleep(TAP_HOLD_US);
+    if (!post(code, false, flags)) return 4;
   } else {
-    post(code, true, flags);
-    usleep(30000);
-    post(code, false, flags);
+    // Silently tapping on a typo would be worse than refusing.
+    fprintf(stderr, "unknown mode: %s\n", mode);
+    return 2;
   }
   return 0;
 }

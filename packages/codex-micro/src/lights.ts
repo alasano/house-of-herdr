@@ -1,8 +1,18 @@
-// Status to lighting translation for the six Agent Key LEDs.
-import type { ThreadLighting } from "./device.js";
+// Status to lighting translation for the six Agent Key LEDs and the ring.
+import type { LightingSide, ThreadLighting } from "./device.js";
 import { SLOT_COUNT, type AgentStatus } from "./slots.js";
 
 const EFFECT = { off: 0, solid: 1, breath: 4 } as const;
+
+// The ambient ring doubles as the dial-mode indicator: blue in agent mode.
+export const RING_AGENTS: LightingSide = {
+  e: 1,
+  b: 0.5,
+  s: 0,
+  m: 0,
+  c: 0x2277ff,
+};
+export const RING_OFF: LightingSide = { e: 0, b: 0, s: 0, m: 0, c: 0 };
 
 export const STATUS_COLORS: Record<AgentStatus, number> = {
   blocked: 0xffaa00,

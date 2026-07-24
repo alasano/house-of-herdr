@@ -1,9 +1,35 @@
 // Minimal Herdr socket client: newline-delimited JSON over the local unix
-// socket, with one lazy connection for requests and dedicated connections for
-// event subscriptions.
-import net from "node:net";
-import os from "node:os";
+// socket, with one connection per request and dedicated connections for event
+// subscriptions.
 import path from "node:path";
+import os from "node:os";
+import {
+  REQUEST_TIMEOUT_MS,
+  connect,
+  readLines,
+  requestLine,
+} from "./socket.js";
+import type { AgentStatus } from "./slots.js";
+
+const SUBSCRIBE_ID = "sub";
+
+// Herdr answers with a machine-readable code; callers branch on it (a clear
+// against an already-closed pane is expected, not a failure), so the code has
+// to survive as a field rather than only inside the message text.
+export class HerdrError extends Error {
+  constructor(
+    readonly code: string,
+    detail: string,
+  ) {
+    super(`${code}: ${detail}`);
+    this.name = "HerdrError";
+  }
+}
+
+function herdrError(body: unknown, fallback: string): HerdrError {
+  const { code, message } = (body ?? {}) as { code?: string; message?: string };
+  return new HerdrError(code ?? "error", message ?? fallback);
+}
 
 export interface AgentInfo {
   terminal_id: string;
@@ -12,8 +38,7 @@ export interface AgentInfo {
   tab_id: string;
   agent?: string;
   name?: string;
-  display_agent?: string;
-  agent_status: "idle" | "working" | "blocked" | "done" | "unknown";
+  agent_status: AgentStatus;
   state_change_seq: number;
   focused: boolean;
 }
@@ -27,7 +52,7 @@ export interface WorkspaceInfo {
 
 export interface TabInfo {
   tab_id: string;
-  label?: string;
+  label: string;
   focused: boolean;
 }
 
@@ -55,49 +80,22 @@ export function socketPath(): string {
 export class HerdrClient {
   private nextId = 1;
 
-  // One connection per request: the Herdr server closes request connections
-  // after responding, so a persistent socket would race those closures.
+  // One connection per request: the Herdr server reads a single request per
+  // connection and closes it after responding, so a persistent socket would
+  // race those closures.
   async request(
     method: string,
     params: unknown = {},
   ): Promise<Record<string, unknown>> {
-    const socket = await connect();
+    const socket = await connect(socketPath());
     const id = `cm:${this.nextId++}`;
-    socket.write(JSON.stringify({ id, method, params }) + "\n");
-    return new Promise((resolve, reject) => {
-      let buffer = "";
-      let settled = false;
-      socket.on("data", (data) => {
-        buffer += data.toString("utf8");
-        const newline = buffer.indexOf("\n");
-        if (newline === -1 || settled) return;
-        settled = true;
-        socket.destroy();
-        try {
-          const parsed = JSON.parse(buffer.slice(0, newline)) as Record<
-            string,
-            unknown
-          >;
-          if (parsed.error) {
-            const error = parsed.error as { code?: string; message?: string };
-            reject(
-              new Error(`${error.code ?? "error"}: ${error.message ?? method}`),
-            );
-          } else {
-            resolve((parsed.result ?? {}) as Record<string, unknown>);
-          }
-        } catch (error) {
-          reject(error as Error);
-        }
-      });
-      socket.on("close", () => {
-        if (!settled) {
-          settled = true;
-          reject(new Error("herdr socket closed"));
-        }
-      });
-      socket.on("error", () => {});
-    });
+    const line = await requestLine(
+      socket,
+      JSON.stringify({ id, method, params }),
+    );
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    if (parsed.error) throw herdrError(parsed.error, method);
+    return (parsed.result ?? {}) as Record<string, unknown>;
   }
 
   async agentList(): Promise<AgentInfo[]> {
@@ -125,68 +123,67 @@ export class HerdrClient {
 
 // Opens a dedicated connection, sends one events.subscribe request, and calls
 // onEvent for every pushed envelope. Resolves with a close function once the
-// subscription is acknowledged; rejects if the subscribe fails. onClose fires
-// whenever the connection drops for any reason after acknowledgement.
+// subscription is acknowledged. onClose fires whenever the connection drops
+// for any reason after acknowledgement.
+//
+// Rejects with a HerdrError when Herdr refuses the subscription and with a
+// plain Error when the transport fails. Callers must tell these apart: Herdr
+// probes every pane-scoped subscription at subscribe time and refuses the
+// whole batch if one pane has closed, which says nothing about reachability.
 export async function subscribe(
   subscriptions: Subscription[],
   onEvent: (event: HerdrEvent) => void,
   onClose: () => void,
 ): Promise<() => void> {
-  const socket = await connect();
-  let buffer = "";
-  let acknowledged = false;
-  let settled = false;
+  const socket = await connect(socketPath());
   return new Promise((resolve, reject) => {
+    let acknowledged = false;
+    let settled = false;
     const fail = (error: Error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       socket.destroy();
       reject(error);
     };
-    socket.on("data", (data) => {
-      buffer += data.toString("utf8");
-      let newline;
-      while ((newline = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        let parsed: Record<string, unknown>;
-        try {
-          parsed = JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          continue;
+    const timer = setTimeout(
+      () =>
+        fail(
+          new Error(`subscription ack timed out after ${REQUEST_TIMEOUT_MS}ms`),
+        ),
+      REQUEST_TIMEOUT_MS,
+    );
+    readLines(socket, (line) => {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (!acknowledged && parsed.id === SUBSCRIBE_ID) {
+        if (parsed.error) {
+          fail(herdrError(parsed.error, "events.subscribe"));
+        } else {
+          acknowledged = true;
+          settled = true;
+          clearTimeout(timer);
+          resolve(() => socket.destroy());
         }
-        if (!acknowledged && parsed.id === "sub") {
-          if (parsed.error) {
-            fail(new Error(JSON.stringify(parsed.error)));
-          } else {
-            acknowledged = true;
-            settled = true;
-            resolve(() => socket.destroy());
-          }
-        } else if (typeof parsed.event === "string") {
-          onEvent(parsed as unknown as HerdrEvent);
-        }
+      } else if (typeof parsed.event === "string") {
+        onEvent(parsed as unknown as HerdrEvent);
       }
     });
     socket.on("close", () => {
       if (acknowledged) onClose();
       else fail(new Error("herdr socket closed before subscription ack"));
     });
-    socket.on("error", (error) => fail(error as Error));
+    socket.on("error", (error: Error) => fail(error));
     socket.write(
       JSON.stringify({
-        id: "sub",
+        id: SUBSCRIBE_ID,
         method: "events.subscribe",
         params: { subscriptions },
       }) + "\n",
     );
-  });
-}
-
-function connect(): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath());
-    socket.once("connect", () => resolve(socket));
-    socket.once("error", reject);
   });
 }

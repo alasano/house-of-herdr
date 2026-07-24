@@ -2,10 +2,11 @@
 // state onto the six Agent Key LEDs, and routes device input back into Herdr.
 // Session-leased: if Herdr stays unreachable beyond the lease, the daemon
 // clears the LEDs, releases the device, and exits.
-import { spawn } from "node:child_process";
+import { chatGptRunning } from "./chatgpt.js";
 import { CodexMicro } from "./device.js";
 import {
   HerdrClient,
+  HerdrError,
   subscribe,
   type AgentInfo,
   type PaneInfo,
@@ -14,7 +15,7 @@ import {
 import fs from "node:fs";
 import { Controls, type DialMode } from "./controls.js";
 import { ControlServer, type SlotStatus } from "./control.js";
-import { slotLighting } from "./lights.js";
+import { RING_AGENTS, RING_OFF, slotLighting } from "./lights.js";
 import {
   assignSlots,
   SLOT_COUNT,
@@ -24,7 +25,7 @@ import {
 import { defaultBindings, type Bindings } from "./bindings.js";
 import {
   CONFIG_DIR,
-  ensureStateDir,
+  ensurePluginDirs,
   loadConfig,
   savePolicy,
   PLUGIN_ID,
@@ -33,22 +34,22 @@ import {
 const REFRESH_DEBOUNCE_MS = 75;
 const HERDR_RETRY_MS = 3000;
 const HERDR_LEASE_MS = 60_000;
-// The ChatGPT desktop app cannot share the device: opened first it seizes
-// exclusively, opened second both hosts receive every input (double
-// dispatch). The daemon therefore yields whenever the app is running.
-const CHATGPT_BINARY = "ChatGPT.app/Contents/MacOS/ChatGPT";
 const CHATGPT_POLL_MS = 4000;
 const CONFIG_RELOAD_DEBOUNCE_MS = 300;
+const CONFIG_WATCH_RETRY_MS = 5000;
+// Releasing the device outranks tidying Herdr's sidebar: if Herdr is wedged,
+// stop waiting on it and finish shutting down.
+const SHUTDOWN_CLEANUP_MS = 3000;
 const KEY_GLYPHS = ["①", "②", "③", "④", "⑤", "⑥"];
-// The ambient ring doubles as the dial-mode indicator: blue in agent mode.
-const RING_AGENTS = { e: 1, b: 0.5, s: 0, m: 0, c: 0x2277ff };
-const RING_OFF = { e: 0, b: 0, s: 0, m: 0, c: 0 };
 
 const BASE_SUBSCRIPTIONS: Subscription[] = [
   { type: "pane.created" },
   { type: "pane.closed" },
   { type: "pane.moved" },
   { type: "pane.agent_detected" },
+  // Renames change the labels the popup shows for a slot.
+  { type: "workspace.renamed" },
+  { type: "tab.renamed" },
 ];
 
 function log(message: string): void {
@@ -60,6 +61,14 @@ function shortenHome(path: string): string {
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
+// Resolves either way after ms, so a wedged peer cannot stall an exit path.
+function atMost(work: Promise<unknown>, ms: number): Promise<unknown> {
+  return Promise.race([
+    work,
+    new Promise((resolve) => setTimeout(resolve, ms).unref()),
+  ]);
+}
+
 class Daemon {
   private herdr = new HerdrClient();
   private policy: Policy = "sticky";
@@ -67,6 +76,7 @@ class Daemon {
   private configError: string | null = null;
   private configWatcher: fs.FSWatcher | null = null;
   private configReloadTimer: NodeJS.Timeout | null = null;
+  private configWatchRetryTimer: NodeJS.Timeout | null = null;
   private slots: (string | null)[] = Array.from(
     { length: SLOT_COUNT },
     () => null,
@@ -79,15 +89,17 @@ class Daemon {
   private tokenPanes = new Map<string, string>();
   private lastLighting = "";
   private refreshTimer: NodeJS.Timeout | null = null;
-  private refreshing = false;
-  private refreshDirty = false;
+  private refreshing: Promise<void> | null = null;
+  private refreshQueued: Promise<void> | null = null;
   private subGeneration = 0;
   private closeSubscription: (() => void) | null = null;
   private subRetryTimer: NodeJS.Timeout | null = null;
   private subscribedPanes = "";
+  private herdrReached = false;
   private herdrLostAt: number | null = null;
   private yielded = false;
   private chatGptTimer: NodeJS.Timeout | null = null;
+  private chatGptPolling = false;
   private stopping = false;
 
   private device = new CodexMicro(
@@ -97,7 +109,7 @@ class Daemon {
         void this.pushLighting();
         this.pushRing();
       },
-      onDisconnect: () => this.controls.releaseHeldKeys(),
+      onDisconnect: () => this.controls.resetInputState(),
       onStateChange: () => this.control.broadcast(),
       onHid: (key, act) => this.controls.onHid(key, act),
       onJoystick: (angle, distance) =>
@@ -110,12 +122,7 @@ class Daemon {
     this.herdr,
     {
       bindings: () => this.bindings,
-      slotPaneId: (slot) => {
-        const terminalId = this.slots[slot] ?? null;
-        return terminalId
-          ? (this.agents.get(terminalId)?.pane_id ?? null)
-          : null;
-      },
+      slotPaneId: (slot) => this.agentForSlot(slot)?.pane_id ?? null,
       togglePopup: () => void this.togglePopup(),
       togglePolicy: () => this.togglePolicy(),
       onDialModeChange: (mode) => this.onDialModeChange(mode),
@@ -128,17 +135,20 @@ class Daemon {
       policy: this.policy,
       dialMode: this.controls.dialMode,
       state: this.yielded ? "yielded" : this.device.state,
-      herdrConnected: this.herdrLostAt === null,
+      herdrConnected: this.herdrReached && this.herdrLostAt === null,
       configError: this.configError,
       slots: this.slotDetails,
     }),
     togglePolicy: () => this.togglePolicy(),
     popup: () => void this.togglePopup(),
     stop: () => void this.shutdown(),
+    // Slot labels are resolved lazily; the arrival of a watcher is what makes
+    // them worth fetching.
+    watchersChanged: () => this.scheduleRefresh(),
   });
 
   async start(): Promise<void> {
-    ensureStateDir();
+    ensurePluginDirs();
     await this.control.listen();
     this.applyConfig(true);
     this.watchConfig();
@@ -189,7 +199,10 @@ class Daemon {
 
   // Watches the config dir (not the file: atomic tmp+rename writes replace
   // the inode) and hot-applies changes; no restart needed for config edits.
+  // Retries, because a watch that failed once must not disable hot-reload for
+  // the life of the daemon.
   private watchConfig(): void {
+    if (this.stopping) return;
     try {
       this.configWatcher = fs.watch(CONFIG_DIR, () => {
         if (this.configReloadTimer) return;
@@ -199,13 +212,26 @@ class Daemon {
         }, CONFIG_RELOAD_DEBOUNCE_MS);
       });
     } catch (error) {
-      log(`config watch unavailable: ${(error as Error).message}`);
+      log(`config watch unavailable, retrying: ${(error as Error).message}`);
+      this.configWatchRetryTimer = setTimeout(
+        () => this.watchConfig(),
+        CONFIG_WATCH_RETRY_MS,
+      );
     }
   }
 
   private togglePolicy(): Policy {
     const next: Policy = this.policy === "sticky" ? "mirror" : "sticky";
-    savePolicy(next); // the file watcher applies and broadcasts it
+    try {
+      savePolicy(next); // the file watcher applies and broadcasts it
+    } catch (error) {
+      // Persisting over a config we could not parse would delete the user's
+      // bindings, so refuse and report instead.
+      this.configError = (error as Error).message;
+      log(`policy not saved: ${this.configError}`);
+      this.control.broadcast();
+      return this.policy;
+    }
     this.policy = next;
     log(`policy: ${this.policy}`);
     this.scheduleRefresh();
@@ -222,7 +248,7 @@ class Daemon {
   }
 
   private pushRing(): void {
-    if (!this.device.connected) return;
+    if (!this.device.connected || this.yielded || this.stopping) return;
     this.device
       .setAmbientLighting(
         this.controls.dialMode === "agents" ? RING_AGENTS : RING_OFF,
@@ -230,32 +256,38 @@ class Daemon {
       .catch((error: Error) => log(`ring update failed: ${error.message}`));
   }
 
+  // Clears every LED and hands the device back. Used both when yielding to
+  // the ChatGPT app and on shutdown.
+  private async blankDevice(): Promise<void> {
+    if (!this.device.connected) return;
+    await this.device.setThreadLighting(slotLighting([])).catch(() => {});
+    await this.device.setAmbientLighting(RING_OFF).catch(() => {});
+  }
+
   private async pollChatGpt(): Promise<void> {
-    if (this.stopping) return;
-    const running = await new Promise<boolean>((resolve) => {
-      const child = spawn("pgrep", ["-f", CHATGPT_BINARY], { stdio: "ignore" });
-      child.on("close", (status) => resolve(status === 0));
-      child.on("error", () => resolve(false));
-    });
-    if (running === this.yielded) return;
-    this.yielded = running;
-    if (running) {
-      log("ChatGPT app detected, yielding the device");
-      this.controls.releaseHeldKeys();
-      if (this.device.connected) {
-        await this.device
-          .setThreadLighting(
-            slotLighting(Array.from({ length: SLOT_COUNT }, () => null)),
-          )
-          .catch(() => {});
-        await this.device.setAmbientLighting(RING_OFF).catch(() => {});
+    // Overlapping polls could interleave a yield and a reclaim and leave the
+    // device stopped while this.yielded says otherwise.
+    if (this.stopping || this.chatGptPolling) return;
+    this.chatGptPolling = true;
+    try {
+      const running = await chatGptRunning();
+      if (this.stopping || running === this.yielded) return;
+      this.yielded = running;
+      if (running) {
+        log("ChatGPT app detected, yielding the device");
+        // Before the (possibly slow) HID writes below, and again inside the
+        // device on disconnect, because there may be no live handle at all.
+        this.controls.resetInputState();
+        await this.blankDevice();
+        await this.device.stop();
+      } else {
+        log("ChatGPT app gone, reclaiming the device");
+        this.device.start();
       }
-      await this.device.stop();
-    } else {
-      log("ChatGPT app gone, reclaiming the device");
-      this.device.start();
+      this.control.broadcast();
+    } finally {
+      this.chatGptPolling = false;
     }
-    this.control.broadcast();
   }
 
   // Keeps one events connection alive, rebuilt whenever the agent pane set
@@ -266,11 +298,11 @@ class Daemon {
     const generation = ++this.subGeneration;
     void (async () => {
       try {
+        // Awaiting a refresh that started after this call matters: Herdr
+        // rejects the whole batch if any subscribed pane has since closed.
         await this.runRefresh();
         if (this.stopping || generation !== this.subGeneration) return;
-        const panes = [...this.agents.values()]
-          .map((agent) => agent.pane_id)
-          .sort();
+        const panes = this.agentPaneIds();
         const subscriptions = [
           ...BASE_SUBSCRIPTIONS,
           ...panes.map((paneId) => ({
@@ -281,7 +313,11 @@ class Daemon {
         const close = await subscribe(
           subscriptions,
           () => this.scheduleRefresh(),
-          () => this.onSubscriptionLost(generation, "events connection closed"),
+          () =>
+            this.onSubscriptionLost(
+              generation,
+              new Error("events connection closed"),
+            ),
         );
         if (this.stopping || generation !== this.subGeneration) {
           close();
@@ -289,26 +325,37 @@ class Daemon {
         }
         this.closeSubscription = close;
         this.subscribedPanes = panes.join(",");
+        this.herdrReached = true;
         this.herdrLostAt = null;
         log(`subscribed to ${panes.length} agent panes`);
         // Reconcile anything that changed between the snapshot and the ack.
         this.scheduleRefresh();
       } catch (error) {
-        this.onSubscriptionLost(generation, (error as Error).message);
+        this.onSubscriptionLost(generation, error as Error);
       }
     })();
   }
 
-  private onSubscriptionLost(generation: number, reason: string): void {
+  private onSubscriptionLost(generation: number, error: Error): void {
     if (this.stopping || generation !== this.subGeneration) return;
     this.closeSubscription = null;
-    this.herdrLostAt ??= Date.now();
-    if (Date.now() - this.herdrLostAt > HERDR_LEASE_MS) {
-      log("herdr unreachable beyond lease, releasing device and exiting");
-      void this.shutdown();
-      return;
+    // Herdr answering with an error proves it is reachable. It probes every
+    // pane-scoped subscription at subscribe time and refuses the whole batch
+    // if one pane has closed since the snapshot, which is a lost race, not a
+    // dead server - counting it against the lease would exit the daemon and
+    // go dark while Herdr was fine.
+    if (error instanceof HerdrError) {
+      this.herdrReached = true;
+      this.herdrLostAt = null;
+    } else {
+      this.herdrLostAt ??= Date.now();
+      if (Date.now() - this.herdrLostAt > HERDR_LEASE_MS) {
+        log("herdr unreachable beyond lease, releasing device and exiting");
+        void this.shutdown();
+        return;
+      }
     }
-    log(`resubscribing in ${HERDR_RETRY_MS}ms: ${reason}`);
+    log(`resubscribing in ${HERDR_RETRY_MS}ms: ${error.message}`);
     this.subRetryTimer = setTimeout(
       () => this.maintainSubscription(),
       HERDR_RETRY_MS,
@@ -330,25 +377,31 @@ class Daemon {
     }, REFRESH_DEBOUNCE_MS);
   }
 
-  // Single-flight: one refresh at a time; requests arriving mid-flight
-  // coalesce into exactly one follow-up run.
-  private async runRefresh(): Promise<void> {
-    if (this.stopping) return;
-    if (this.refreshing) {
-      this.refreshDirty = true;
-      return;
+  // Single-flight, and the returned promise always covers a refresh that
+  // began no earlier than the call: awaiting it therefore guarantees a fresh
+  // snapshot, which a caller building a subscription list depends on.
+  private runRefresh(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    if (!this.refreshing) {
+      this.refreshing = this.executeRefresh().finally(() => {
+        this.refreshing = null;
+      });
+      return this.refreshing;
     }
-    this.refreshing = true;
+    this.refreshQueued ??= this.refreshing
+      .catch(() => {})
+      .then(() => {
+        this.refreshQueued = null;
+        return this.runRefresh();
+      });
+    return this.refreshQueued;
+  }
+
+  private async executeRefresh(): Promise<void> {
     try {
       await this.refresh();
     } catch (error) {
       log(`refresh failed: ${(error as Error).message}`);
-    } finally {
-      this.refreshing = false;
-      if (this.refreshDirty && !this.stopping) {
-        this.refreshDirty = false;
-        void this.runRefresh();
-      }
     }
   }
 
@@ -369,53 +422,75 @@ class Daemon {
     await this.pushLighting();
     this.control.broadcast();
 
-    const panes = [...this.agents.values()]
-      .map((agent) => agent.pane_id)
-      .sort()
-      .join(",");
-    if (this.closeSubscription && panes !== this.subscribedPanes) {
+    if (
+      this.closeSubscription &&
+      this.agentPaneIds().join(",") !== this.subscribedPanes
+    ) {
       this.rebuildSubscription();
     }
   }
 
+  /** Sorted pane ids of every known agent; the subscription's identity. */
+  private agentPaneIds(): string[] {
+    return [...this.agents.values()].map((agent) => agent.pane_id).sort();
+  }
+
+  private agentForSlot(slot: number): AgentInfo | null {
+    const terminalId = this.slots[slot] ?? null;
+    return terminalId ? (this.agents.get(terminalId) ?? null) : null;
+  }
+
+  private slottedAgents(): (AgentInfo | null)[] {
+    return this.slots.map((_, i) => this.agentForSlot(i));
+  }
+
+  // One failed lookup must not discard the ones that succeeded.
+  private async orEmpty<T>(work: Promise<T[]>, what: string): Promise<T[]> {
+    try {
+      return await work;
+    } catch (error) {
+      log(`${what} lookup failed: ${(error as Error).message}`);
+      return [];
+    }
+  }
+
   // Resolves the display facts the popup shows per slot: pane name, workspace
-  // and tab labels, and the pane's live working directory.
+  // and tab labels, and the pane's live working directory. Those cost 2+N
+  // socket round trips and feed nothing but the popup, so they are resolved
+  // only while something is watching; otherwise the slots fall back to ids,
+  // and the first watcher triggers a refresh that fills them in.
   private async updateSlotDetails(): Promise<void> {
-    const slotted = this.slots
-      .map((terminalId) =>
-        terminalId ? this.agents.get(terminalId) : undefined,
-      )
-      .filter((agent): agent is AgentInfo => agent !== undefined);
+    const agents = this.slottedAgents();
+    const present = agents.filter(
+      (agent): agent is AgentInfo => agent !== null,
+    );
     let workspaceLabels = new Map<string, string>();
     let tabLabels = new Map<string, string>();
     let panes = new Map<string, PaneInfo>();
-    if (slotted.length > 0) {
-      try {
-        const workspaceIds = [
-          ...new Set(slotted.map((agent) => agent.workspace_id)),
-        ];
-        const [workspaces, paneInfos, tabLists] = await Promise.all([
-          this.herdr.workspaceList(),
-          this.herdr.paneList(),
-          Promise.all(workspaceIds.map((id) => this.herdr.tabList(id))),
-        ]);
-        workspaceLabels = new Map(
-          workspaces.map((w) => [w.workspace_id, w.label]),
-        );
-        panes = new Map(paneInfos.map((pane) => [pane.pane_id, pane]));
-        tabLabels = new Map(
-          tabLists
-            .flat()
-            .flatMap((tab) =>
-              tab.label ? [[tab.tab_id, tab.label] as const] : [],
-            ),
-        );
-      } catch (error) {
-        log(`slot detail lookup failed: ${(error as Error).message}`);
-      }
+    if (present.length > 0 && this.control.hasWatchers) {
+      const workspaceIds = [
+        ...new Set(present.map((agent) => agent.workspace_id)),
+      ];
+      const [workspaces, paneInfos, tabLists] = await Promise.all([
+        this.orEmpty(this.herdr.workspaceList(), "workspace"),
+        this.orEmpty(this.herdr.paneList(), "pane"),
+        Promise.all(
+          workspaceIds.map((id) => this.orEmpty(this.herdr.tabList(id), "tab")),
+        ),
+      ]);
+      workspaceLabels = new Map(
+        workspaces.map((w) => [w.workspace_id, w.label]),
+      );
+      panes = new Map(paneInfos.map((pane) => [pane.pane_id, pane]));
+      tabLabels = new Map(
+        tabLists
+          .flat()
+          .flatMap((tab) =>
+            tab.label ? [[tab.tab_id, tab.label] as const] : [],
+          ),
+      );
     }
-    this.slotDetails = this.slots.map((terminalId, i) => {
-      const agent = terminalId ? this.agents.get(terminalId) : undefined;
+    this.slotDetails = agents.map((agent, i) => {
       if (!agent) return null;
       const pane = panes.get(agent.pane_id);
       const cwd = pane?.foreground_cwd ?? pane?.cwd ?? "";
@@ -434,8 +509,9 @@ class Daemon {
   }
 
   private async pushLighting(): Promise<void> {
-    const statuses = this.slots.map((terminalId): AgentStatus | null =>
-      terminalId ? (this.agents.get(terminalId)?.agent_status ?? null) : null,
+    if (this.yielded || this.stopping) return;
+    const statuses = this.slottedAgents().map(
+      (agent): AgentStatus | null => agent?.agent_status ?? null,
     );
     const lighting = slotLighting(statuses);
     const key = JSON.stringify(lighting);
@@ -453,11 +529,8 @@ class Daemon {
   // on the next refresh.
   private async updateKeyTokens(): Promise<void> {
     const desired = new Map<string, string>();
-    this.slots.forEach((terminalId, i) => {
-      const paneId = terminalId
-        ? this.agents.get(terminalId)?.pane_id
-        : undefined;
-      if (paneId) desired.set(paneId, KEY_GLYPHS[i]!);
+    this.slottedAgents().forEach((agent, i) => {
+      if (agent) desired.set(agent.pane_id, KEY_GLYPHS[i]!);
     });
     const ops: [string, string | null][] = [];
     for (const [paneId, glyph] of desired) {
@@ -485,15 +558,29 @@ class Daemon {
     this.tokenPanes = next;
   }
 
-  private reportKeyToken(
+  private async reportKeyToken(
     paneId: string,
     glyph: string | null,
-  ): Promise<unknown> {
-    return this.herdr.request("pane.report_metadata", {
-      pane_id: paneId,
-      source: PLUGIN_ID,
-      tokens: { key: glyph },
-    });
+  ): Promise<void> {
+    try {
+      await this.herdr.request("pane.report_metadata", {
+        pane_id: paneId,
+        source: PLUGIN_ID,
+        tokens: { key: glyph },
+      });
+    } catch (error) {
+      // Clearing a token on a pane Herdr has already forgotten has achieved
+      // what it was for; treating it as a failure would retry and log it on
+      // every refresh for the life of the daemon.
+      if (
+        glyph === null &&
+        error instanceof HerdrError &&
+        error.code === "pane_not_found"
+      ) {
+        return;
+      }
+      throw error;
+    }
   }
 
   // Stateless: probe by closing; a popup_not_open error means open one.
@@ -501,7 +588,7 @@ class Daemon {
     try {
       await this.herdr.request("popup.close", {});
     } catch (error) {
-      if (!(error as Error).message.startsWith("popup_not_open")) {
+      if (!(error instanceof HerdrError) || error.code !== "popup_not_open") {
         log(`popup toggle failed: ${(error as Error).message}`);
         return;
       }
@@ -526,21 +613,21 @@ class Daemon {
     if (this.subRetryTimer) clearTimeout(this.subRetryTimer);
     if (this.chatGptTimer) clearInterval(this.chatGptTimer);
     if (this.configReloadTimer) clearTimeout(this.configReloadTimer);
+    if (this.configWatchRetryTimer) clearTimeout(this.configWatchRetryTimer);
     this.configWatcher?.close();
     this.closeSubscription?.();
-    this.controls.releaseHeldKeys();
-    if (this.device.connected) {
-      await this.device
-        .setThreadLighting(
-          slotLighting(Array.from({ length: SLOT_COUNT }, () => null)),
-        )
-        .catch(() => {});
-      await this.device.setAmbientLighting(RING_OFF).catch(() => {});
-    }
-    await Promise.allSettled(
-      [...this.tokenPanes.keys()].map((paneId) =>
-        this.reportKeyToken(paneId, null).catch(() => {}),
+    // Once here and once more when the handle drops, because there may be no
+    // live handle to drop.
+    this.controls.resetInputState();
+    await this.blankDevice();
+    // Bounded: a wedged Herdr must not keep the device held hostage.
+    await atMost(
+      Promise.allSettled(
+        [...this.tokenPanes.keys()].map((paneId) =>
+          this.reportKeyToken(paneId, null).catch(() => {}),
+        ),
       ),
+      SHUTDOWN_CLEANUP_MS,
     );
     await this.device.stop();
     this.control.close();

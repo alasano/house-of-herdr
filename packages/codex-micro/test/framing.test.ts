@@ -58,19 +58,6 @@ describe("Reassembler", () => {
     expect(collected).toEqual([{ channel: CHANNEL_RPC, message }]);
   });
 
-  it("handles reports without the leading report id byte", () => {
-    const reassembler = new Reassembler();
-    const stripped = deviceReports('{"m":"v.oai.hid"}').map((report) =>
-      report.subarray(1),
-    );
-    const collected = stripped.flatMap((report) =>
-      reassembler.push(Buffer.from(report)),
-    );
-    expect(collected).toEqual([
-      { channel: CHANNEL_RPC, message: '{"m":"v.oai.hid"}' },
-    ]);
-  });
-
   it("splits multiple newline-delimited messages in one buffer stream", () => {
     const reassembler = new Reassembler();
     const collected = deviceReports('{"a":1}\n{"b":2}').flatMap((report) =>
@@ -102,5 +89,38 @@ describe("Reassembler", () => {
     expect(collected).toEqual([
       { channel: CHANNEL_RPC, message: '{"fresh":1}' },
     ]);
+  });
+
+  it("rejects a report that does not carry the report id", () => {
+    const reassembler = new Reassembler();
+    // macOS always prefixes numbered input reports. Guessing at the layout
+    // would read a channel byte out of a payload on any frame whose channel
+    // happened to equal the report id.
+    const stripped = deviceReports('{"m":"v.oai.hid"}').map((report) =>
+      Buffer.from(report.subarray(1)),
+    );
+    expect(stripped.flatMap((report) => reassembler.push(report))).toEqual([]);
+  });
+
+  it("rejects truncated reports and out-of-range declared lengths", () => {
+    const reassembler = new Reassembler();
+    expect(reassembler.push(Buffer.from([REPORT_ID, CHANNEL_RPC]))).toEqual([]);
+
+    const overrun = Buffer.alloc(64);
+    overrun[0] = REPORT_ID;
+    overrun[1] = CHANNEL_RPC;
+    overrun[2] = 200; // past both the report end and the payload capacity
+    expect(reassembler.push(overrun)).toEqual([]);
+
+    // Declares ten payload bytes but carries one.
+    expect(
+      reassembler.push(Buffer.from([REPORT_ID, CHANNEL_RPC, 10, 0x61])),
+    ).toEqual([]);
+
+    // None of that poisoned the channel buffer.
+    const collected = deviceReports('{"ok":1}').flatMap((report) =>
+      reassembler.push(report),
+    );
+    expect(collected).toEqual([{ channel: CHANNEL_RPC, message: '{"ok":1}' }]);
   });
 });

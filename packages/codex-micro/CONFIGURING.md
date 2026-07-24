@@ -18,6 +18,15 @@ validation error; read it with:
 node dist/ctl.js status   # from the plugin directory; see "configError"
 ```
 
+Every kind of invalid config is reported this way, not just bad bindings:
+unparseable JSON, a root that is not an object, and an unknown `policy` all
+keep the previous configuration and surface the error. A config file that is
+merely absent is not an error - that is the default state.
+
+Because the file is the source of truth, actions that persist a setting
+(`toggle-policy`) refuse to write while it is unparseable rather than
+overwrite it. Fix the reported error and the write succeeds.
+
 ## Schema
 
 ```json
@@ -41,7 +50,7 @@ where `<binding>` is one of:
 ```
 
 - `policy`: `"sticky"` (agents keep their key; default) or `"mirror"` (keys
-  always match the sidebar's priority order).
+  always match Herdr's attention priority order).
 - `bindings`: optional. Omitted inputs keep their defaults. `"none"` disables
   an input.
 
@@ -105,12 +114,23 @@ directions keep pane navigation.
    `lopt`/`ropt` (`lalt`/`ralt`), `lctrl`/`rctrl`, `lshift`/`rshift`, for
    apps that trigger on a bare modifier press, e.g. speech-to-text tools.
 
+   **Holds need an input that reports a release.** Dial rotation (`ENC_CW`,
+   `ENC_CC`) and joystick directions report entry only, so a hold bound
+   there could never be released. Both `"hold": true` and bare modifier keys
+   are rejected on those inputs, naming the entry, rather than silently
+   degrading to a 30ms blip. Every other input, including the dial click
+   `ENC_CLK`, supports holds.
+
 3. **`{"herdr-key": "..."}`**: send a key into Herdr's focused pane (works
    even when Herdr is not the frontmost app; no permissions). Uses Herdr's
    key grammar: `esc`, `enter`, `ctrl+c`, `shift+tab`, `f1`, ...
 4. **`{"herdr-text": "..."}`**: type literal text into Herdr's focused pane.
 5. **`{"exec": ["cmd", "arg", ...]}`**: run a command on press (argv, no
-   shell). Anything the `herdr` CLI can do fits here.
+   shell). Anything the `herdr` CLI can do fits here. The first element is
+   the command and must not be empty.
+
+A binding object names exactly one of `key`, `herdr-key`, `herdr-text` or
+`exec`; declaring two is rejected rather than resolved by precedence.
 
 ## Examples
 

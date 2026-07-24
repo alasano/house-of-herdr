@@ -7,9 +7,16 @@ if (!cmd || !["status", "toggle-policy", "popup", "stop"].includes(cmd)) {
   process.exit(2);
 }
 
+let reply: Record<string, unknown>;
 try {
-  console.log(JSON.stringify(await sendCommand(cmd), null, 2));
-} catch {
-  console.error("codex-micro daemon is not running");
+  reply = await sendCommand(cmd);
+} catch (error) {
+  console.error(
+    `codex-micro daemon is not reachable: ${(error as Error).message}`,
+  );
   process.exit(1);
 }
+
+console.log(JSON.stringify(reply, null, 2));
+// A protocol-level error is a failed command, not a successful round trip.
+if (reply.error) process.exit(1);

@@ -9,13 +9,13 @@ importers:
     devDependencies:
       "@commitlint/cli":
         specifier: ^21.2.1
-        version: 21.2.1(@types/node@26.1.1)(conventional-commits-parser@7.1.0)(typescript@7.0.2)
+        version: 21.2.1(@types/node@22.20.1)(conventional-commits-parser@7.1.0)(typescript@7.0.2)
       "@commitlint/config-conventional":
         specifier: ^21.2.0
         version: 21.2.0
       "@types/node":
-        specifier: ^26.1.1
-        version: 26.1.1
+        specifier: ^22.20.1
+        version: 22.20.1
       lefthook:
         specifier: ^2.1.10
         version: 2.1.10
@@ -30,17 +30,20 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1)(jiti@2.6.1))
+        version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.6.1))
 
   packages/codex-micro:
     dependencies:
       node-hid:
         specifier: ^3.4.0
         version: 3.4.0
+      string-width:
+        specifier: ^8.2.2
+        version: 8.2.2
     devDependencies:
       "@types/node":
-        specifier: ^26.1.1
-        version: 26.1.1
+        specifier: ^22.20.1
+        version: 22.20.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -610,10 +613,10 @@ packages:
         integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==,
       }
 
-  "@types/node@26.1.1":
+  "@types/node@22.20.1":
     resolution:
       {
-        integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==,
+        integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==,
       }
 
   "@typescript/typescript-aix-ppc64@7.0.2":
@@ -1508,6 +1511,13 @@ packages:
       }
     engines: { node: ">=18" }
 
+  string-width@8.2.2:
+    resolution:
+      {
+        integrity: sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg==,
+      }
+    engines: { node: ">=20" }
+
   strip-ansi@7.2.0:
     resolution:
       {
@@ -1556,10 +1566,10 @@ packages:
     engines: { node: ">=16.20.0" }
     hasBin: true
 
-  undici-types@8.3.0:
+  undici-types@6.21.0:
     resolution:
       {
-        integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==,
+        integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==,
       }
 
   vite@8.1.5:
@@ -1697,12 +1707,12 @@ snapshots:
 
   "@babel/helper-validator-identifier@7.29.7": {}
 
-  "@commitlint/cli@21.2.1(@types/node@26.1.1)(conventional-commits-parser@7.1.0)(typescript@7.0.2)":
+  "@commitlint/cli@21.2.1(@types/node@22.20.1)(conventional-commits-parser@7.1.0)(typescript@7.0.2)":
     dependencies:
       "@commitlint/config-conventional": 21.2.0
       "@commitlint/format": 21.2.0
       "@commitlint/lint": 21.2.0
-      "@commitlint/load": 21.2.0(@types/node@26.1.1)(typescript@7.0.2)
+      "@commitlint/load": 21.2.0(@types/node@22.20.1)(typescript@7.0.2)
       "@commitlint/read": 21.2.1(conventional-commits-parser@7.1.0)
       "@commitlint/types": 21.2.0
       tinyexec: 1.2.4
@@ -1747,14 +1757,14 @@ snapshots:
       "@commitlint/rules": 21.2.0
       "@commitlint/types": 21.2.0
 
-  "@commitlint/load@21.2.0(@types/node@26.1.1)(typescript@7.0.2)":
+  "@commitlint/load@21.2.0(@types/node@22.20.1)(typescript@7.0.2)":
     dependencies:
       "@commitlint/config-validator": 21.2.0
       "@commitlint/execute-rule": 21.0.1
       "@commitlint/resolve-extends": 21.2.0
       "@commitlint/types": 21.2.0
       cosmiconfig: 9.0.2(typescript@7.0.2)
-      cosmiconfig-typescript-loader: 6.3.0(@types/node@26.1.1)(cosmiconfig@9.0.2(typescript@7.0.2))(typescript@7.0.2)
+      cosmiconfig-typescript-loader: 6.3.0(@types/node@22.20.1)(cosmiconfig@9.0.2(typescript@7.0.2))(typescript@7.0.2)
       es-toolkit: 1.49.0
       is-plain-obj: 4.1.0
       picocolors: 1.1.1
@@ -1973,9 +1983,9 @@ snapshots:
 
   "@types/estree@1.0.9": {}
 
-  "@types/node@26.1.1":
+  "@types/node@22.20.1":
     dependencies:
-      undici-types: 8.3.0
+      undici-types: 6.21.0
 
   "@typescript/typescript-aix-ppc64@7.0.2":
     optional: true
@@ -2046,13 +2056,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  "@vitest/mocker@4.1.10(vite@8.1.5(@types/node@26.1.1)(jiti@2.6.1))":
+  "@vitest/mocker@4.1.10(vite@8.1.5(@types/node@22.20.1)(jiti@2.6.1))":
     dependencies:
       "@vitest/spy": 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.5(@types/node@26.1.1)(jiti@2.6.1)
+      vite: 8.1.5(@types/node@22.20.1)(jiti@2.6.1)
 
   "@vitest/pretty-format@4.1.10":
     dependencies:
@@ -2120,9 +2130,9 @@ snapshots:
 
   convert-source-map@2.0.0: {}
 
-  cosmiconfig-typescript-loader@6.3.0(@types/node@26.1.1)(cosmiconfig@9.0.2(typescript@7.0.2))(typescript@7.0.2):
+  cosmiconfig-typescript-loader@6.3.0(@types/node@22.20.1)(cosmiconfig@9.0.2(typescript@7.0.2))(typescript@7.0.2):
     dependencies:
-      "@types/node": 26.1.1
+      "@types/node": 22.20.1
       cosmiconfig: 9.0.2(typescript@7.0.2)
       jiti: 2.6.1
       typescript: 7.0.2
@@ -2401,6 +2411,11 @@ snapshots:
       get-east-asian-width: 1.6.0
       strip-ansi: 7.2.0
 
+  string-width@8.2.2:
+    dependencies:
+      get-east-asian-width: 1.6.0
+      strip-ansi: 7.2.0
+
   strip-ansi@7.2.0:
     dependencies:
       ansi-regex: 6.2.2
@@ -2442,9 +2457,9 @@ snapshots:
       "@typescript/typescript-win32-arm64": 7.0.2
       "@typescript/typescript-win32-x64": 7.0.2
 
-  undici-types@8.3.0: {}
+  undici-types@6.21.0: {}
 
-  vite@8.1.5(@types/node@26.1.1)(jiti@2.6.1):
+  vite@8.1.5(@types/node@22.20.1)(jiti@2.6.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.5
@@ -2452,14 +2467,14 @@ snapshots:
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
-      "@types/node": 26.1.1
+      "@types/node": 22.20.1
       fsevents: 2.3.3
       jiti: 2.6.1
 
-  vitest@4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1)(jiti@2.6.1)):
+  vitest@4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.6.1)):
     dependencies:
       "@vitest/expect": 4.1.10
-      "@vitest/mocker": 4.1.10(vite@8.1.5(@types/node@26.1.1)(jiti@2.6.1))
+      "@vitest/mocker": 4.1.10(vite@8.1.5(@types/node@22.20.1)(jiti@2.6.1))
       "@vitest/pretty-format": 4.1.10
       "@vitest/runner": 4.1.10
       "@vitest/snapshot": 4.1.10
@@ -2476,10 +2491,10 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.5(@types/node@26.1.1)(jiti@2.6.1)
+      vite: 8.1.5(@types/node@22.20.1)(jiti@2.6.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      "@types/node": 26.1.1
+      "@types/node": 22.20.1
     transitivePeerDependencies:
       - msw
 

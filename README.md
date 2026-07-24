@@ -19,3 +19,7 @@ Use your Work Louder Codex Micro (OpenAI edition) natively with Herdr: the six A
 ```bash
 herdr plugin install alasano/house-of-herdr/packages/codex-micro
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

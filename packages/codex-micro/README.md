@@ -108,13 +108,17 @@ key and which one:
 - **sticky** (default): an agent keeps its key while it stays on the board;
   a key is reassigned only when a strictly needier agent is waiting.
   Statuses change in place, keys never shuffle.
-- **mirror**: the keys always equal the sidebar's priority order (attention,
-  then most recent state change). Key 1 is always the most urgent agent,
-  and keys reshuffle as statuses change.
+- **mirror**: the keys always follow Herdr's attention priority (blocked,
+  done, working, idle, then most recent state change). Key 1 is always the
+  most urgent agent, and keys reshuffle as statuses change.
 
 Example: the agent on key 5 finishes its work. Under sticky, key 5 turns
 green and everything else stays put. Under mirror, that agent jumps to key 1
 and the agents it passed each shift one key over.
+
+Both policies rank by the same attention priority Herdr's sidebar uses when
+it is set to sort by priority. Herdr sorts the sidebar by space by default,
+so the keys will not always match the sidebar's visible row order.
 
 Toggle with `p` in the popup or the `toggle-policy` action; the choice
 persists.
@@ -149,4 +153,10 @@ even while you are in another app. Herdr-side Enter only ever lands inside
 Herdr, but it can submit a prompt in a pane you are not looking at.
 
 The key-synthesis helper ships prebuilt (`bin/tapkey`, universal binary);
-its source is `src/tapkey.c` and `npm run build:tapkey` rebuilds it.
+its source is `src/tapkey.c` and `npm run build:tapkey` rebuilds it. The
+compile is reproducible, so CI rebuilds it and fails if the committed binary
+is not bit-for-bit what the source produces.
+
+## License
+
+MIT. See [LICENSE](../../LICENSE).

@@ -1,21 +1,30 @@
 // Slot assignment: which six agents occupy the six Agent Keys. Pure functions.
 //
-// "mirror" reproduces Herdr's sidebar priority order exactly: attention
-// descending, then most recent state change first. Key N is always sidebar
-// row N, so keys reshuffle as statuses change.
+// Both policies rank agents by Herdr's attention priority: attention
+// descending, then most recent state change first. That is the same ordering
+// Herdr's sidebar uses when it is configured to sort by priority; Herdr's
+// default sidebar sort is by space, so the keys will not always mirror the
+// sidebar's visible row order.
 //
-// "sticky" uses priority only for admission: an agent keeps its key through
-// status changes, and a key is reassigned only when an unslotted agent has
-// strictly higher attention than the lowest-attention slotted one.
+// "mirror" applies that ranking directly: key N is rank N, so keys reshuffle
+// as statuses change.
+//
+// "sticky" uses the ranking only for admission: an agent keeps its key
+// through status changes, and a key is reassigned only when an unslotted
+// agent has strictly higher attention than the lowest-attention slotted one.
 export const SLOT_COUNT = 6;
 
 export type AgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
 export type Policy = "sticky" | "mirror";
 
-export interface SlotAgent {
-  terminalId: string;
+/** The minimum an agent must expose to be ranked. */
+export interface Prioritized {
   status: AgentStatus;
   seq: number;
+}
+
+export interface SlotAgent extends Prioritized {
+  terminalId: string;
 }
 
 // Matches Herdr's tab_attention_priority.
@@ -34,7 +43,8 @@ export function attention(status: AgentStatus): number {
   }
 }
 
-function byPriority(a: SlotAgent, b: SlotAgent): number {
+/** Neediest first, then most recently changed. */
+export function comparePriority(a: Prioritized, b: Prioritized): number {
   return attention(b.status) - attention(a.status) || b.seq - a.seq;
 }
 
@@ -43,7 +53,7 @@ export function assignSlots(
   agents: SlotAgent[],
   policy: Policy,
 ): (string | null)[] {
-  const sorted = [...agents].sort(byPriority);
+  const sorted = [...agents].sort(comparePriority);
   if (policy === "mirror") {
     const slots: (string | null)[] = sorted
       .slice(0, SLOT_COUNT)
@@ -67,24 +77,26 @@ export function assignSlots(
       slotted.add(candidate.terminalId);
       continue;
     }
-    let victim = -1;
+    // Every slot is filled here, so the least needy occupant is the one to
+    // displace. Resolving through the map keeps this honest about the
+    // possibility of a missing entry instead of asserting it away.
+    let victim: { index: number; agent: SlotAgent } | null = null;
     for (let i = 0; i < SLOT_COUNT; i++) {
-      const current = byId.get(slots[i] as string) as SlotAgent;
-      if (
-        victim === -1 ||
-        byPriority(current, byId.get(slots[victim] as string) as SlotAgent) > 0
-      ) {
-        victim = i;
+      const id = slots[i];
+      if (id === null || id === undefined) continue;
+      const agent = byId.get(id);
+      if (!agent) continue;
+      if (victim === null || comparePriority(agent, victim.agent) > 0) {
+        victim = { index: i, agent };
       }
     }
-    const lowest = byId.get(slots[victim] as string) as SlotAgent;
-    if (attention(candidate.status) > attention(lowest.status)) {
-      slotted.delete(lowest.terminalId);
-      slots[victim] = candidate.terminalId;
-      slotted.add(candidate.terminalId);
-    } else {
-      break;
-    }
+    if (victim === null) break;
+    // Sorted candidates only get less needy, so the first one that fails to
+    // beat the weakest occupant ends admission.
+    if (attention(candidate.status) <= attention(victim.agent.status)) break;
+    slotted.delete(victim.agent.terminalId);
+    slots[victim.index] = candidate.terminalId;
+    slotted.add(candidate.terminalId);
   }
   return slots;
 }
