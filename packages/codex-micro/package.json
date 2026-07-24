@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "rm -rf dist && tsc",
-    "build:tapkey": "cc -O2 -arch arm64 -arch x86_64 -o bin/tapkey src/tapkey.c -framework ApplicationServices",
+    "build:tapkey": "cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -o bin/tapkey src/tapkey.c -framework ApplicationServices",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run"
   },

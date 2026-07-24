@@ -1,0 +1,54 @@
+name: Build tapkey
+
+# bin/tapkey is committed and runs with the Accessibility permission, so a
+# reviewer reading a diff cannot see what it contains. Building it here and
+# attesting it means the binary in the repo carries public, verifiable proof
+# of which source and which workflow produced it.
+on:
+  push:
+    branches: [master]
+    paths:
+      - packages/codex-micro/src/tapkey.c
+      - .github/workflows/build-tapkey.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: compile the universal binary
+        working-directory: packages/codex-micro
+        run: |
+          cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -o bin/tapkey \
+            src/tapkey.c -framework ApplicationServices -Wall -Wextra -Werror
+          file bin/tapkey
+          shasum -a 256 bin/tapkey
+
+      # Binds this exact digest to the repository, commit, workflow and runner
+      # that produced it. Anyone can check the committed binary with:
+      #   gh attestation verify packages/codex-micro/bin/tapkey \
+      #     --repo alasano/house-of-herdr
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: packages/codex-micro/bin/tapkey
+
+      - name: commit the rebuilt binary
+        run: |
+          if git diff --quiet -- packages/codex-micro/bin/tapkey; then
+            echo "binary is already what this source produces; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/codex-micro/bin/tapkey
+          git commit -m "build(codex-micro): rebuild tapkey from source"
+          git push

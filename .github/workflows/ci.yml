@@ -9,7 +9,7 @@ jobs:
   checks:
     # macOS: the plugin is macOS-only, node-hid builds natively, and the
     # tapkey helper needs the Apple toolchain.
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -29,25 +29,51 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-      # bin/tapkey is committed and runs with the Accessibility permission, so
-      # prove it is the artifact src/tapkey.c actually produces. The compile is
-      # bit-for-bit reproducible when the output basename matches, because the
-      # linker embeds it in the ad-hoc signature.
-      - name: verify the committed tapkey matches its source
+      - name: compile tapkey from source
         working-directory: packages/codex-micro
         run: |
-          mkdir -p "$RUNNER_TEMP/tapkey-check"
-          cc -O2 -arch arm64 -arch x86_64 \
-            -o "$RUNNER_TEMP/tapkey-check/tapkey" \
+          cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -o "$RUNNER_TEMP/tapkey" \
             src/tapkey.c -framework ApplicationServices -Wall -Wextra -Werror
-          if ! cmp -s bin/tapkey "$RUNNER_TEMP/tapkey-check/tapkey"; then
-            echo "bin/tapkey does not match src/tapkey.c; run: npm run build:tapkey"
-            shasum -a 256 bin/tapkey "$RUNNER_TEMP/tapkey-check/tapkey"
-            exit 1
-          fi
 
-      # Herdr installs plugins with npm, which ignores pnpm-lock.yaml, so the
-      # committed npm lockfile is what real installs resolve against.
-      - name: verify the plugin installs the way herdr installs it
+      - name: smoke-test the committed tapkey
         working-directory: packages/codex-micro
-        run: npm ci --ignore-scripts
+        run: |
+          file bin/tapkey | grep -q 'arm64' || { echo "missing arm64 slice"; exit 1; }
+          file bin/tapkey | grep -q 'x86_64' || { echo "missing x86_64 slice"; exit 1; }
+          # Argument validation runs ahead of the Accessibility check, so these
+          # hold on a runner that has no such permission.
+          for bad in "" "notanumber tap" "54 nonsense 0" "999999 tap" "54 tap 99"; do
+            # shellcheck disable=SC2086
+            if ./bin/tapkey $bad >/dev/null 2>&1; then
+              echo "tapkey accepted invalid arguments: '$bad'"
+              exit 1
+            fi
+          done
+
+  # Herdr installs plugins with npm, which ignores pnpm-lock.yaml, so the
+  # committed npm lockfile is what real installs resolve against. This runs in
+  # its own job on a clean checkout on purpose: with a pnpm node_modules tree
+  # present, npm can resolve through those symlinks, and a lockfile that only
+  # works on the machine that generated it still appears to install.
+  plugin-install:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install and build exactly as the herdr plugin manifest does
+        working-directory: packages/codex-micro
+        run: |
+          npm ci
+          npm run build
+
+      - name: verify the built plugin is runnable
+        working-directory: packages/codex-micro
+        run: |
+          for entry in start ctl restart doctor popup daemon; do
+            test -f "dist/$entry.js" || { echo "missing dist/$entry.js"; exit 1; }
+          done
+          node -e "require('node-hid')"

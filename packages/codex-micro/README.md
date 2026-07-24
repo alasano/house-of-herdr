@@ -17,7 +17,7 @@ Use your Work Louder Codex Micro (OpenAI edition) natively with [Herdr](https://
 > ChatGPT app is closed; while it runs, the plugin yields the device
 > automatically and reclaims it when the app quits.
 
-**Requirements**: macOS, Herdr ≥ 0.7.5, Node ≥ 22.
+**Requirements**: macOS ≥ 14, Herdr ≥ 0.7.5, Node ≥ 22.
 
 ## Install
 
@@ -152,10 +152,9 @@ dial switches workspaces and the CODEX key submits in Herdr's focused pane
 even while you are in another app. Herdr-side Enter only ever lands inside
 Herdr, but it can submit a prompt in a pane you are not looking at.
 
-The key-synthesis helper ships prebuilt (`bin/tapkey`, universal binary);
-its source is `src/tapkey.c` and `npm run build:tapkey` rebuilds it. The
-compile is reproducible, so CI rebuilds it and fails if the committed binary
-is not bit-for-bit what the source produces.
+The key-synthesis helper ships prebuilt (`bin/tapkey`, a universal arm64 and
+x86_64 binary targeting macOS 14); its source is `src/tapkey.c` and
+`npm run build:tapkey` rebuilds it.
 
 ## License
 

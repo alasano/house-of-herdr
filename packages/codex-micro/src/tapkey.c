@@ -91,23 +91,35 @@ int main(int argc, char **argv) {
     return 2;
   }
   const char *mode = argc > 2 ? argv[2] : "tap";
+  const bool is_check = strcmp(mode, "check") == 0;
+  // Silently tapping on a typo would be worse than refusing.
+  if (!is_check && strcmp(mode, "tap") != 0 && strcmp(mode, "down") != 0 &&
+      strcmp(mode, "up") != 0) {
+    fprintf(stderr, "unknown mode: %s\n", mode);
+    return 2;
+  }
+
+  // Arguments are validated before the permission check, so a malformed call
+  // is reported as a malformed call whatever the Accessibility state is.
+  // "check" is exempt: callers pass a dummy keycode.
+  long keycode = 0;
+  long mask = 0;
+  if (!is_check) {
+    if (!parse_long(argv[1], 0, KEYCODE_MAX, &keycode)) {
+      fprintf(stderr, "invalid keycode: %s\n", argv[1]);
+      return 2;
+    }
+    if (argc > 3 && !parse_long(argv[3], 0, MODIFIER_MASK_MAX, &mask)) {
+      fprintf(stderr, "invalid modifier mask: %s\n", argv[3]);
+      return 2;
+    }
+  }
+
   if (!AXIsProcessTrusted()) {
     fprintf(stderr, "accessibility permission not granted\n");
     return 3;
   }
-  // Checked before the keycode is parsed: callers pass a dummy keycode.
-  if (strcmp(mode, "check") == 0) return 0;
-
-  long keycode = 0;
-  if (!parse_long(argv[1], 0, KEYCODE_MAX, &keycode)) {
-    fprintf(stderr, "invalid keycode: %s\n", argv[1]);
-    return 2;
-  }
-  long mask = 0;
-  if (argc > 3 && !parse_long(argv[3], 0, MODIFIER_MASK_MAX, &mask)) {
-    fprintf(stderr, "invalid modifier mask: %s\n", argv[3]);
-    return 2;
-  }
+  if (is_check) return 0;
 
   CGKeyCode code = (CGKeyCode)keycode;
   CGEventFlags flags = mask_to_flags((int)mask);
@@ -115,14 +127,10 @@ int main(int argc, char **argv) {
     if (!post(code, true, flags)) return 4;
   } else if (strcmp(mode, "up") == 0) {
     if (!post(code, false, flags)) return 4;
-  } else if (strcmp(mode, "tap") == 0) {
+  } else {
     if (!post(code, true, flags)) return 4;
     usleep(TAP_HOLD_US);
     if (!post(code, false, flags)) return 4;
-  } else {
-    // Silently tapping on a typo would be worse than refusing.
-    fprintf(stderr, "unknown mode: %s\n", mode);
-    return 2;
   }
   return 0;
 }
