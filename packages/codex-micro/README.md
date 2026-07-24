@@ -152,9 +152,22 @@ dial switches workspaces and the CODEX key submits in Herdr's focused pane
 even while you are in another app. Herdr-side Enter only ever lands inside
 Herdr, but it can submit a prompt in a pane you are not looking at.
 
+## Verifying the key helper
+
 The key-synthesis helper ships prebuilt (`bin/tapkey`, a universal arm64 and
-x86_64 binary targeting macOS 14); its source is `src/tapkey.c` and
-`npm run build:tapkey` rebuilds it.
+x86_64 binary targeting macOS 14). It runs with the Accessibility permission
+and you cannot read it in a diff, so it is built by CI rather than by hand,
+and carries a signed provenance attestation. Check it yourself:
+
+```bash
+gh attestation verify packages/codex-micro/bin/tapkey --repo alasano/house-of-herdr
+```
+
+That proves the exact bytes came from `src/tapkey.c` in this repository via
+[`build-tapkey.yml`](../../.github/workflows/build-tapkey.yml), on a
+GitHub-hosted runner, at a specific commit. CI re-runs that check on every
+push, so a hand-committed binary cannot land. `npm run build:tapkey` rebuilds
+it locally for development, but only the CI-built binary is committed.
 
 ## License
 

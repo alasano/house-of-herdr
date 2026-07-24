@@ -35,6 +35,17 @@ jobs:
           cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -o "$RUNNER_TEMP/tapkey" \
             src/tapkey.c -framework ApplicationServices -Wall -Wextra -Werror
 
+      # The guarantee: bin/tapkey runs with the Accessibility permission and is
+      # unreadable in a diff, so it has to carry proof of where it came from.
+      # This fails unless the committed bytes were produced by
+      # build-tapkey.yml in this repository, which a hand-committed binary
+      # cannot be. Anyone can run the same check themselves.
+      - name: verify tapkey was built by ci
+        working-directory: packages/codex-micro
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify bin/tapkey --repo "$GITHUB_REPOSITORY"
+
       - name: smoke-test the committed tapkey
         working-directory: packages/codex-micro
         run: |
