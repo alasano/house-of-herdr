@@ -1,0 +1,59 @@
+id = "alasano.codex-micro"
+name = "Codex Micro for Herdr"
+version = "0.1.0"
+min_herdr_version = "0.7.5"
+description = "Agent status lights and controls on the Work Louder Codex Micro"
+platforms = ["macos"]
+
+[[build]]
+command = ["npm", "install"]
+
+[[build]]
+command = ["npm", "run", "build"]
+
+[[startup]]
+command = ["node", "dist/start.js"]
+
+[[actions]]
+id = "start"
+title = "Start Codex Micro daemon"
+contexts = ["workspace"]
+command = ["node", "dist/start.js"]
+
+[[actions]]
+id = "stop"
+title = "Stop Codex Micro daemon"
+contexts = ["workspace"]
+command = ["node", "dist/ctl.js", "stop"]
+
+[[actions]]
+id = "toggle-policy"
+title = "Toggle sticky/mirror slot policy"
+contexts = ["workspace"]
+command = ["node", "dist/ctl.js", "toggle-policy"]
+
+[[actions]]
+id = "popup"
+title = "Toggle the Codex Micro key-map popup"
+contexts = ["workspace"]
+command = ["node", "dist/ctl.js", "popup"]
+
+[[actions]]
+id = "restart"
+title = "Restart the Codex Micro daemon"
+contexts = ["workspace"]
+command = ["node", "dist/restart.js"]
+
+[[actions]]
+id = "doctor"
+title = "Diagnose Codex Micro setup"
+contexts = ["workspace"]
+command = ["node", "dist/doctor.js"]
+
+[[panes]]
+id = "keys"
+title = "Codex Micro keys"
+placement = "popup"
+width = 160
+height = 22
+command = ["node", "dist/popup.js"]
