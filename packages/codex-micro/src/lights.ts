@@ -29,21 +29,37 @@ export const STATUS_COLORS: Record<AgentStatus, number> = {
   unknown: 0xffffff,
 };
 
+// Color carries status; the breathing effect is reserved for the one focused
+// agent. Spending breath on "working" instead left every busy key pulsing at
+// once, which is noise rather than information, and left no channel at all for
+// where the user actually is.
 const STATUS_LIGHTING: Record<AgentStatus, Omit<ThreadLighting, "id">> = {
   blocked: { c: STATUS_COLORS.blocked, b: 1, e: EFFECT.solid, s: 0 },
   done: { c: STATUS_COLORS.done, b: 1, e: EFFECT.solid, s: 0 },
-  working: { c: STATUS_COLORS.working, b: 1, e: EFFECT.breath, s: 0.35 },
+  working: { c: STATUS_COLORS.working, b: 1, e: EFFECT.solid, s: 0 },
   idle: { c: STATUS_COLORS.idle, b: 0.25, e: EFFECT.solid, s: 0 },
   unknown: { c: STATUS_COLORS.unknown, b: 0.08, e: EFFECT.solid, s: 0 },
 };
 
 const OFF: Omit<ThreadLighting, "id"> = { c: 0, b: 0, e: EFFECT.off, s: 0 };
 
+const FOCUS_SPEED = 0.35;
+
+/**
+ * `focusedSlot` is the slot holding Herdr's focused agent, or null when the
+ * focused pane is not slotted (or holds no agent). It keeps its status color
+ * and breathes; full brightness matters because idle and unknown are dimmed
+ * far enough that a breath at their own brightness would be hard to see.
+ */
 export function slotLighting(
   statuses: (AgentStatus | null)[],
+  focusedSlot: number | null = null,
 ): ThreadLighting[] {
   return Array.from({ length: SLOT_COUNT }, (_, id) => {
     const status = statuses[id] ?? null;
-    return { id, ...(status ? STATUS_LIGHTING[status] : OFF) };
+    if (!status) return { id, ...OFF };
+    const base = STATUS_LIGHTING[status];
+    if (id !== focusedSlot) return { id, ...base };
+    return { id, ...base, b: 1, e: EFFECT.breath, s: FOCUS_SPEED };
   });
 }

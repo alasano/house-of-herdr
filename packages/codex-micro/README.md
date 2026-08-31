@@ -104,14 +104,23 @@ The physical input names:
 
 ## Lighting
 
-| Status        | Light           |
-| ------------- | --------------- |
-| blocked       | amber, solid    |
-| done (unseen) | green, solid    |
-| working       | blue, breathing |
-| idle          | white, dim      |
-| unknown       | white, faint    |
-| empty slot    | off             |
+Color carries the agent's status; the breathing effect marks the one agent
+Herdr currently has focused, so a glance finds where you are among six lit
+keys.
+
+| Status        | Light        |
+| ------------- | ------------ |
+| blocked       | amber, solid |
+| done (unseen) | green, solid |
+| working       | blue, solid  |
+| idle          | white, dim   |
+| unknown       | white, faint |
+| empty slot    | off          |
+| _focused_     | _breathing_  |
+
+The focused agent keeps its status color and breathes at full brightness,
+whatever that status is. Nothing breathes while Herdr's focused pane holds no
+agent, or holds one that has no key.
 
 ## Slot policies
 

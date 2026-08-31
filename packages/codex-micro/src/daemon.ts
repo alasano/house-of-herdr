@@ -48,6 +48,9 @@ const BASE_SUBSCRIPTIONS: Subscription[] = [
   { type: "pane.closed" },
   { type: "pane.moved" },
   { type: "pane.agent_detected" },
+  // Focus moves the breathing key, so the lights track it live rather than
+  // waiting for whatever unrelated event refreshes next.
+  { type: "pane.focused" },
   // Renames change the labels the popup shows for a slot.
   { type: "workspace.renamed" },
   { type: "tab.renamed" },
@@ -524,10 +527,14 @@ class Daemon {
 
   private async pushLighting(): Promise<void> {
     if (this.yielded || this.stopping) return;
-    const statuses = this.slottedAgents().map(
+    const slotted = this.slottedAgents();
+    const statuses = slotted.map(
       (agent): AgentStatus | null => agent?.agent_status ?? null,
     );
-    const lighting = slotLighting(statuses);
+    // Herdr focuses exactly one pane, so at most one slot breathes. A -1 here
+    // is normal: the focused pane may hold no agent or may not be slotted.
+    const focused = slotted.findIndex((agent) => agent?.focused === true);
+    const lighting = slotLighting(statuses, focused === -1 ? null : focused);
     const key = JSON.stringify(lighting);
     if (key === this.lastLighting || !this.device.connected) return;
     try {
