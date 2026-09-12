@@ -10,14 +10,10 @@ import {
   type StatusPayload,
 } from "./control.js";
 import { STATUS_COLORS } from "./lights.js";
+import { GAP, MARGIN, layout, type Layout } from "./popup-layout.js";
 
-const CELL = 36; // outer box width
-const INNER = CELL - 4; // text width inside "│ ... │"
-const GAP = 3;
-const MARGIN = 3;
-const GRID = 4 * CELL + 3 * GAP;
-const TOP_INDENT = MARGIN + Math.floor((GRID - (2 * CELL + GAP)) / 2);
 const BOX_HEIGHT = 6;
+const FALLBACK_COLUMNS = 160; // the manifest's popup width, for a non-TTY stdout
 
 const RESET = "\x1b[0m";
 const DIM = "\x1b[2m";
@@ -27,6 +23,7 @@ const ALT_LEAVE = "\x1b[?1049l";
 
 let status: StatusPayload | null = null;
 let connected = true;
+let grid: Layout = layout(FALLBACK_COLUMNS);
 
 const STATE_LABELS: Record<ControlState, [number, string]> = {
   connected: [0x22cc55, "connected"],
@@ -43,38 +40,39 @@ function fg(color: number): string {
 }
 
 function content(text: string, style = ""): string {
-  const padded = padTo(text, INNER);
+  const padded = padTo(text, grid.inner);
   return `│ ${style ? style + padded + RESET : padded} │`;
 }
 
 function field(text: string): string {
-  return clipEnd(sanitize(text), INNER);
+  return clipEnd(sanitize(text), grid.inner);
 }
 
 function boxLines(slot: SlotStatus | null, key: number): string[] {
+  const { cell, inner } = grid;
   if (!slot) {
-    const top = `┌ [${key}] ` + "─".repeat(CELL - 7) + "┐";
+    const top = `┌ [${key}] ` + "─".repeat(cell - 7) + "┐";
     return [
       DIM + top + RESET,
       DIM + content("") + RESET,
-      DIM + content("· empty ·".padStart(Math.floor((INNER + 9) / 2))) + RESET,
+      DIM + content("· empty ·".padStart(Math.floor((inner + 9) / 2))) + RESET,
       DIM + content("") + RESET,
       DIM + content("") + RESET,
-      DIM + "└" + "─".repeat(CELL - 2) + "┘" + RESET,
+      DIM + "└" + "─".repeat(cell - 2) + "┘" + RESET,
     ];
   }
   const color = fg(STATUS_COLORS[slot.status]);
   const label = ` [${key}] ● ${slot.status} `;
   const top =
-    "┌" + label + "─".repeat(Math.max(0, CELL - 2 - label.length)) + "┐";
+    "┌" + label + "─".repeat(Math.max(0, cell - 2 - label.length)) + "┐";
   const name = slot.paneName ? `${slot.paneName} (${slot.agent})` : slot.agent;
   return [
     color + BOLD + top + RESET,
     content(field(name)),
     content(field(slot.tab)),
     content(field(slot.workspace)),
-    content(clipStart(sanitize(slot.cwd), INNER), DIM),
-    color + "└" + "─".repeat(CELL - 2) + "┘" + RESET,
+    content(clipStart(sanitize(slot.cwd), inner), DIM),
+    color + "└" + "─".repeat(cell - 2) + "┘" + RESET,
   ];
 }
 
@@ -92,6 +90,7 @@ function renderRow(
 }
 
 function render(): void {
+  grid = layout(process.stdout.columns ?? FALLBACK_COLUMNS);
   const out: string[] = ["\x1b[2J\x1b[H"];
   if (!status) {
     out.push("  connecting to codex-micro daemon...");
@@ -115,12 +114,12 @@ function render(): void {
     );
     if (status.configError) {
       // Clipped: a validation message is unbounded and would wrap the grid.
-      const message = clipEnd(sanitize(status.configError), GRID - 16);
+      const message = clipEnd(sanitize(status.configError), grid.grid - 16);
       out.push(`  ${fg(0xff5555)}config error: ${message}${RESET}`);
     }
-    out.push("  " + DIM + "─".repeat(GRID) + RESET);
+    out.push("  " + DIM + "─".repeat(grid.grid) + RESET);
     out.push("");
-    out.push(...renderRow(status.slots.slice(0, 2), [1, 2], TOP_INDENT));
+    out.push(...renderRow(status.slots.slice(0, 2), [1, 2], grid.topIndent));
     out.push("");
     out.push(...renderRow(status.slots.slice(2, 6), [3, 4, 5, 6], MARGIN));
     out.push("");
