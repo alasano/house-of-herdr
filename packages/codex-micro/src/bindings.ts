@@ -30,6 +30,7 @@ export type Binding =
   | { kind: "herdr-key"; keys: string }
   | { kind: "herdr-text"; text: string }
   | { kind: "exec"; argv: string[] }
+  | { kind: "tap-hold"; tap: Binding; hold: Binding; holdMs: number }
   | { kind: "none" };
 
 const BUTTON_INPUTS = [
@@ -64,6 +65,7 @@ const NONE: Binding = { kind: "none" };
 const preset = (name: Preset): Binding => ({ kind: "preset", preset: name });
 
 const BINDING_KEYS = ["key", "herdr-key", "herdr-text", "exec"] as const;
+const DEFAULT_HOLD_MS = 400;
 
 export function defaultBindings(): Bindings {
   return {
@@ -129,6 +131,17 @@ function parseBinding(
   }
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     const record = value as Record<string, unknown>;
+    // "hold" doubles as the key binding's boolean flag, so a "hold" beside a
+    // "key" stays with the key binding; any "tap", or a lone non-boolean
+    // "hold", means the two-action form.
+    if (
+      record.tap !== undefined ||
+      (record.hold !== undefined &&
+        typeof record.hold !== "boolean" &&
+        record.key === undefined)
+    ) {
+      return parseTapHold(entry, record, supportsHold);
+    }
     // An object naming two actions has no defensible interpretation; picking
     // the first recognized one would silently drop the author's intent.
     const declared = BINDING_KEYS.filter((key) => record[key] !== undefined);
@@ -165,8 +178,68 @@ function parseBinding(
     }
   }
   throw new Error(
-    `bindings.${entry}: expected a preset name, {"key"}, {"herdr-key"}, {"herdr-text"}, or {"exec"}`,
+    `bindings.${entry}: expected a preset name, {"key"}, {"herdr-key"}, {"herdr-text"}, {"exec"}, or {"tap", "hold"}`,
   );
+}
+
+// One key, two actions: a press released before hold_ms fires "tap" on
+// release; holding past it fires "hold" once. Both need the release edge.
+function parseTapHold(
+  entry: string,
+  record: Record<string, unknown>,
+  supportsHold: boolean,
+): Binding {
+  if (!supportsHold) {
+    throw new Error(
+      `bindings.${entry}: tap/hold needs a release edge, which ${entry} does not report; bind it to ENC_CLK or a command key`,
+    );
+  }
+  if (
+    record.tap === undefined ||
+    record.hold === undefined ||
+    typeof record.hold === "boolean"
+  ) {
+    throw new Error(
+      `bindings.${entry}: tap/hold needs both "tap" and "hold" as bindings`,
+    );
+  }
+  const extra = BINDING_KEYS.filter((key) => record[key] !== undefined);
+  if (extra.length > 0) {
+    throw new Error(
+      `bindings.${entry}: tap/hold cannot combine with ${extra.join(", ")}`,
+    );
+  }
+  const holdMs =
+    record.hold_ms === undefined ? DEFAULT_HOLD_MS : record.hold_ms;
+  if (
+    typeof holdMs !== "number" ||
+    !Number.isInteger(holdMs) ||
+    holdMs < 100 ||
+    holdMs > 2000
+  ) {
+    throw new Error(
+      `bindings.${entry}: "hold_ms" must be an integer from 100 to 2000, got ${JSON.stringify(record.hold_ms)}`,
+    );
+  }
+  return {
+    kind: "tap-hold",
+    tap: parseTapHoldAction(`${entry}.tap`, record.tap),
+    hold: parseTapHoldAction(`${entry}.hold`, record.hold),
+    holdMs,
+  };
+}
+
+function parseTapHoldAction(entry: string, value: unknown): Binding {
+  const action = parseBinding(entry, value, true);
+  if (action.kind === "tap-hold") {
+    throw new Error(`bindings.${entry}: tap/hold does not nest`);
+  }
+  if (action.kind === "key" && action.hold) {
+    throw new Error(
+      `bindings.${entry}: a held key needs the release edge tap/hold consumes; use a regular key`,
+    );
+  }
+  return action;
 }
 
 export function resolveBindings(raw: unknown): Bindings {

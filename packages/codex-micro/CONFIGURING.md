@@ -49,6 +49,7 @@ where `<binding>` is one of:
 { "herdr-key": "esc" }              send a key to Herdr's focused pane
 { "herdr-text": "continue" }        type text into Herdr's focused pane
 { "exec": ["open", "x-app://x"] }   run a command
+{ "tap": <binding>, "hold": <binding> }   two actions on one key
 ```
 
 - `policy`: `"sticky"` (agents keep their key; default) or `"mirror"` (keys
@@ -149,9 +150,15 @@ directions keep pane navigation.
 5. **`{"exec": ["cmd", "arg", ...]}`**: run a command on press (argv, no
    shell). Anything the `herdr` CLI can do fits here. The first element is
    the command and must not be empty.
+6. **`{"tap": ..., "hold": ..., "hold_ms": 400}`**: two actions on one key.
+   A press released before `hold_ms` (default 400, range 100-2000) fires
+   `tap` on release; holding past it fires `hold` once, and the release then
+   does nothing. Both take any binding above except held keys. Needs the
+   release edge, so dial rotation and the joystick reject it.
 
 A binding object names exactly one of `key`, `herdr-key`, `herdr-text` or
-`exec`; declaring two is rejected rather than resolved by precedence.
+`exec`; declaring two is rejected rather than resolved by precedence. The
+`tap`/`hold` pair is the one form that carries two.
 
 ## Examples
 
@@ -175,6 +182,16 @@ directions keep navigating panes:
 {
   "bindings": {
     "joystick": { "up": { "exec": ["open", "superwhisper://record"] } }
+  }
+}
+```
+
+Escape on a short press, the key-map popup on a long one:
+
+```json
+{
+  "bindings": {
+    "ACT07": { "tap": { "herdr-key": "esc" }, "hold": "popup" }
   }
 }
 ```

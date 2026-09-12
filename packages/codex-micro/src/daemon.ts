@@ -188,10 +188,16 @@ class Daemon {
       const hasDialMode = [
         ...Object.values(this.bindings.buttons),
         ...Object.values(this.bindings.joystick),
-      ].some(
-        (binding) =>
-          binding?.kind === "preset" && binding.preset === "dial-mode",
-      );
+      ]
+        .flatMap((binding) =>
+          binding?.kind === "tap-hold"
+            ? [binding.tap, binding.hold]
+            : [binding],
+        )
+        .some(
+          (binding) =>
+            binding?.kind === "preset" && binding.preset === "dial-mode",
+        );
       if (!hasDialMode && this.controls.dialMode !== "workspaces") {
         this.controls.resetDialMode("workspaces");
         this.pushRing();

@@ -60,6 +60,12 @@ export class Controls {
   // Refcount per combo, so two inputs holding the same key post one down on
   // the first and one up on the last, rather than releasing on the first.
   private holds = new Map<string, { combo: KeyCombo; count: number }>();
+  // Tap/hold keys awaiting their verdict: the timer fires the hold action, a
+  // release before it fires the tap action instead.
+  private pendingTapHolds = new Map<
+    string,
+    { tap: Binding; timer: NodeJS.Timeout }
+  >();
   dialMode: DialMode;
 
   constructor(
@@ -94,12 +100,15 @@ export class Controls {
   }
 
   // A synthetic key must never stay logically held when the device
-  // disappears or the daemon exits mid-hold, and a stick that vanishes while
+  // disappears or the daemon exits mid-hold, a pending tap/hold must not fire
+  // for a key nobody is touching anymore, and a stick that vanishes while
   // deflected must not suppress the next deflection into the same sector.
   resetInputState(): void {
     for (const { combo } of this.holds.values()) this.tapKey(combo, "up");
     this.holds.clear();
     this.heldByInput.clear();
+    for (const { timer } of this.pendingTapHolds.values()) clearTimeout(timer);
+    this.pendingTapHolds.clear();
     this.lastSector = null;
     this.scroller.stop();
   }
@@ -117,6 +126,7 @@ export class Controls {
     }
     if (act === 0) {
       this.endHold(key);
+      this.endTapHold(key);
       return;
     }
     const binding = this.deps.bindings().buttons[key as ButtonInput];
@@ -196,9 +206,37 @@ export class Controls {
       case "exec":
         this.execCommand(binding.argv);
         break;
+      case "tap-hold":
+        this.beginTapHold(input, binding);
+        break;
       case "none":
         break;
     }
+  }
+
+  private beginTapHold(
+    input: string,
+    binding: Extract<Binding, { kind: "tap-hold" }>,
+  ): void {
+    if (this.pendingTapHolds.has(input)) return; // repeat press without a release
+    const timer = setTimeout(() => {
+      this.pendingTapHolds.delete(input);
+      // Off the HID callback's try/catch, so a throw here is contained too.
+      try {
+        this.dispatchTap(binding.hold);
+      } catch (error) {
+        this.log(`input ${input} hold failed: ${(error as Error).message}`);
+      }
+    }, binding.holdMs);
+    this.pendingTapHolds.set(input, { tap: binding.tap, timer });
+  }
+
+  private endTapHold(input: string): void {
+    const pending = this.pendingTapHolds.get(input);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingTapHolds.delete(input);
+    this.dispatchTap(pending.tap);
   }
 
   // Dial ticks and joystick sectors have no release edge, so hold bindings

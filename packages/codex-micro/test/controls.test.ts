@@ -143,6 +143,54 @@ describe("tap bindings", () => {
   });
 });
 
+describe("tap/hold keys", () => {
+  const tapHold = () =>
+    resolveBindings({ ACT07: { tap: "zoom", hold: "popup", hold_ms: 400 } });
+
+  it("fires the tap action on a release before the hold time", () => {
+    vi.useFakeTimers();
+    try {
+      const { controls, herdr, deps } = setup(tapHold());
+      controls.onHid("ACT07", 1);
+      vi.advanceTimersByTime(100);
+      controls.onHid("ACT07", 0);
+      vi.advanceTimersByTime(1000);
+      expect(herdr.request).toHaveBeenCalledWith("pane.zoom", {});
+      expect(deps.togglePopup).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fires the hold action once at the hold time and ignores the release", () => {
+    vi.useFakeTimers();
+    try {
+      const { controls, herdr, deps } = setup(tapHold());
+      controls.onHid("ACT07", 1);
+      vi.advanceTimersByTime(400);
+      controls.onHid("ACT07", 0);
+      expect(deps.togglePopup).toHaveBeenCalledTimes(1);
+      expect(herdr.request).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a pending hold when the device goes away", () => {
+    vi.useFakeTimers();
+    try {
+      const { controls, herdr, deps } = setup(tapHold());
+      controls.onHid("ACT07", 1);
+      controls.resetInputState();
+      vi.advanceTimersByTime(1000);
+      expect(deps.togglePopup).not.toHaveBeenCalled();
+      expect(herdr.request).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("dial modes", () => {
   it("uses the original workspace-agent-scroll order by default", () => {
     const { controls, deps } = setup();

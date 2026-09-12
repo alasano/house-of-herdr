@@ -166,3 +166,42 @@ describe("resolveBindings", () => {
     );
   });
 });
+
+describe("tap/hold", () => {
+  it("parses both actions with the default hold time", () => {
+    const bindings = resolveBindings({
+      ACT07: { tap: { "herdr-key": "esc" }, hold: "popup" },
+    });
+    expect(bindings.buttons.ACT07).toEqual({
+      kind: "tap-hold",
+      tap: { kind: "herdr-key", keys: "esc" },
+      hold: { kind: "preset", preset: "popup" },
+      holdMs: 400,
+    });
+  });
+
+  it("rejects half a pair, held keys inside, edgeless inputs, and bad times", () => {
+    expect(() => resolveBindings({ ACT07: { tap: "zoom" } })).toThrow(
+      /bindings.ACT07: tap\/hold needs both/,
+    );
+    expect(() =>
+      resolveBindings({ ACT07: { tap: "zoom", hold: { key: "rcmd" } } }),
+    ).toThrow(/bindings.ACT07.hold: a held key/);
+    expect(() =>
+      resolveBindings({ ENC_CW: { tap: "zoom", hold: "popup" } }),
+    ).toThrow(/bindings.ENC_CW: tap\/hold needs a release edge/);
+    expect(() =>
+      resolveBindings({ ACT07: { tap: "zoom", hold: "popup", hold_ms: 50 } }),
+    ).toThrow(/"hold_ms" must be an integer from 100 to 2000/);
+  });
+
+  it("keeps the boolean hold flag on plain key bindings", () => {
+    expect(
+      resolveBindings({ ACT07: { key: "f13", hold: true } }).buttons.ACT07,
+    ).toEqual({
+      kind: "key",
+      combo: { keyCode: 105, modifiers: 0 },
+      hold: true,
+    });
+  });
+});
