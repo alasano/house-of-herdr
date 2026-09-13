@@ -6,7 +6,9 @@ import { HIDAsync, devicesAsync, type Device } from "node-hid";
 import { CHANNEL_RPC, Reassembler, encodeMessage } from "./framing.js";
 
 export const VENDOR_ID = 0x303a;
-export const PRODUCT_ID = 0x8360;
+// Codex Micro and the two Creator Micro 2 revisions; the latter speak the
+// vendor protocol from firmware 0.6.1 on.
+export const PRODUCT_IDS = new Set([0x8360, 0x8297, 0x8298]);
 export const USAGE_PAGE = 0xff00;
 const RECONNECT_MIN_MS = 3000;
 const RECONNECT_JITTER_MS = 5000;
@@ -45,10 +47,16 @@ export interface DeviceHandlers {
 }
 
 // Maps IOKit open failures to actionable states: 0xE00002C1 (privilege
-// violation) is a missing Input Monitoring grant; 0xE00002C5 (exclusive
-// access) means another host, in practice the ChatGPT app, holds the device.
+// violation) and 0xE00002E2 (not permitted) are a missing Input Monitoring
+// grant; 0xE00002C5 (exclusive access) means another host, in practice the
+// ChatGPT app, holds the device.
 export function classifyOpenError(message: string): DeviceState {
-  if (message.includes("privilege violation") || message.includes("E00002C1")) {
+  if (
+    message.includes("privilege violation") ||
+    message.includes("E00002C1") ||
+    message.includes("not permitted") ||
+    message.includes("E00002E2")
+  ) {
     return "permission_required";
   }
   if (message.includes("exclusive access") || message.includes("E00002C5")) {
@@ -63,7 +71,7 @@ export async function findCandidates(): Promise<Device[]> {
   return devices.filter(
     (d) =>
       d.vendorId === VENDOR_ID &&
-      d.productId === PRODUCT_ID &&
+      PRODUCT_IDS.has(d.productId) &&
       d.usagePage === USAGE_PAGE &&
       d.path,
   );

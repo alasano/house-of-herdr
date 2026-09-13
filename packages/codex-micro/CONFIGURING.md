@@ -201,6 +201,6 @@ node dist/doctor.js   # from the plugin directory
 ```
 
 Checks the Herdr server, the daemon, config validity, ChatGPT-app contention,
-device presence, Input Monitoring, and Accessibility, with guidance per
-failure. After upgrading the plugin itself (new code, not config), run the
+device presence, Input Monitoring, Secure Keyboard Entry, and Accessibility,
+with guidance per failure. After upgrading the plugin itself (new code, not config), run the
 `restart` action or `node dist/restart.js`.

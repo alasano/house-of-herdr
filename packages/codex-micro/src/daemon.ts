@@ -31,11 +31,17 @@ import {
   savePolicy,
   PLUGIN_ID,
 } from "./config.js";
+import {
+  describeSecureInput,
+  secureInputHolder,
+  type SecureInputHolder,
+} from "./secure-input.js";
 
 const REFRESH_DEBOUNCE_MS = 75;
 const HERDR_RETRY_MS = 3000;
 const HERDR_LEASE_MS = 60_000;
 const CHATGPT_POLL_MS = 4000;
+const SECURE_INPUT_POLL_MS = 4000;
 const CONFIG_RELOAD_DEBOUNCE_MS = 300;
 const CONFIG_WATCH_RETRY_MS = 5000;
 // Releasing the device outranks tidying Herdr's sidebar: if Herdr is wedged,
@@ -103,6 +109,9 @@ class Daemon {
   private yielded = false;
   private chatGptTimer: NodeJS.Timeout | null = null;
   private chatGptPolling = false;
+  private secureInput: SecureInputHolder | null = null;
+  private secureInputTimer: NodeJS.Timeout | null = null;
+  private secureInputChecking = false;
   private stopping = false;
 
   private device = new CodexMicro(
@@ -113,7 +122,14 @@ class Daemon {
         this.pushRing();
       },
       onDisconnect: () => this.controls.resetInputState(),
-      onStateChange: () => this.control.broadcast(),
+      onStateChange: () => {
+        // An open denied as "not permitted" has two causes; only one of them
+        // is a missing grant.
+        if (this.device.state === "permission_required") {
+          void this.checkSecureInput();
+        }
+        this.control.broadcast();
+      },
       onHid: (key, act) => this.controls.onHid(key, act),
       onJoystick: (angle, distance) =>
         this.controls.onJoystick(angle, distance),
@@ -141,7 +157,12 @@ class Daemon {
       scrollSteps: this.scrollSteps,
       dialMode: this.controls.dialMode,
       dialModeOrder: this.dialModeOrder,
-      state: this.yielded ? "yielded" : this.device.state,
+      state: this.yielded
+        ? "yielded"
+        : this.secureInput
+          ? "secure_input"
+          : this.device.state,
+      secureInput: this.secureInput,
       herdrConnected: this.herdrReached && this.herdrLostAt === null,
       configError: this.configError,
       slots: this.slotDetails,
@@ -267,7 +288,52 @@ class Daemon {
           : RING_OFF;
     this.device
       .setAmbientLighting(lighting)
-      .catch((error: Error) => log(`ring update failed: ${error.message}`));
+      .catch((error: Error) => this.onWriteFailure("ring", error));
+  }
+
+  // "not permitted" on a write is Secure Keyboard Entry far more often than a
+  // revoked grant; find out which before anyone goes hunting in System
+  // Settings.
+  private onWriteFailure(what: string, error: Error): void {
+    log(`${what} update failed: ${error.message}`);
+    if (/not permitted|E00002E2/.test(error.message)) {
+      void this.checkSecureInput();
+    }
+  }
+
+  // Polls only while blocked: IOKit re-enables the existing handle silently
+  // when the holder lets go, and no agent status change may follow to repaint
+  // the LEDs, so the release has to be noticed here.
+  private async checkSecureInput(): Promise<void> {
+    if (this.stopping || this.secureInputChecking) return;
+    this.secureInputChecking = true;
+    try {
+      const holder = await secureInputHolder();
+      if (this.stopping) return;
+      const before = this.secureInput
+        ? describeSecureInput(this.secureInput)
+        : null;
+      const after = holder ? describeSecureInput(holder) : null;
+      this.secureInput = holder;
+      if (after === before) return;
+      if (holder) {
+        log(`secure keyboard entry ${after}`);
+        this.secureInputTimer ??= setInterval(
+          () => void this.checkSecureInput(),
+          SECURE_INPUT_POLL_MS,
+        );
+      } else {
+        log("secure keyboard entry released, repainting the keypad");
+        if (this.secureInputTimer) clearInterval(this.secureInputTimer);
+        this.secureInputTimer = null;
+        this.lastLighting = "";
+        void this.pushLighting();
+        this.pushRing();
+      }
+      this.control.broadcast();
+    } finally {
+      this.secureInputChecking = false;
+    }
   }
 
   // Clears every LED and hands the device back. Used both when yielding to
@@ -534,7 +600,7 @@ class Daemon {
       await this.device.setThreadLighting(lighting);
       this.lastLighting = key;
     } catch (error) {
-      log(`lighting update failed: ${(error as Error).message}`);
+      this.onWriteFailure("lighting", error as Error);
     }
   }
 
@@ -626,6 +692,7 @@ class Daemon {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.subRetryTimer) clearTimeout(this.subRetryTimer);
     if (this.chatGptTimer) clearInterval(this.chatGptTimer);
+    if (this.secureInputTimer) clearInterval(this.secureInputTimer);
     if (this.configReloadTimer) clearTimeout(this.configReloadTimer);
     if (this.configWatchRetryTimer) clearTimeout(this.configWatchRetryTimer);
     this.configWatcher?.close();

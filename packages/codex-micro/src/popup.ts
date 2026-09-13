@@ -32,6 +32,7 @@ const STATE_LABELS: Record<ControlState, [number, string]> = {
   connected: [0x22cc55, "connected"],
   connecting: [0xffaa00, "connecting…"],
   yielded: [0xffaa00, "yielded to Codex app"],
+  secure_input: [0xff5555, "blocked by Secure Keyboard Entry"],
   device_absent: [0xff5555, "not found"],
   permission_required: [0xff5555, "Input Monitoring permission required"],
   device_busy: [0xff5555, "held by another app"],
@@ -99,7 +100,8 @@ function render(): void {
     // Total over ControlState, so a new device state is a compile error here
     // rather than a raw enum name rendered at runtime.
     const [color, label] = STATE_LABELS[status.state];
-    const device = fg(color) + label + RESET;
+    const holder = status.secureInput?.name;
+    const device = fg(color) + label + (holder ? ` (${holder})` : "") + RESET;
     const daemon = connected
       ? ""
       : `    ${fg(0xff5555)}daemon disconnected${RESET}`;

@@ -7,12 +7,16 @@ import { CONTROL_SOCKET } from "./config.js";
 import { connect, readLines, requestLine } from "./socket.js";
 import type { DeviceState } from "./device.js";
 import type { DialMode } from "./dial.js";
+import type { SecureInputHolder } from "./secure-input.js";
 import type { AgentStatus, Policy } from "./slots.js";
 
 const WATCH_RECONNECT_MS = 1000;
 
-/** Device ownership; 'yielded' overrides while the ChatGPT app runs. */
-export type ControlState = DeviceState | "yielded";
+/**
+ * Device ownership; 'yielded' overrides while the ChatGPT app runs,
+ * 'secure_input' while macOS Secure Keyboard Entry blocks HID access.
+ */
+export type ControlState = DeviceState | "yielded" | "secure_input";
 
 export interface SlotStatus {
   key: number;
@@ -31,6 +35,7 @@ export interface StatusPayload {
   dialMode: DialMode;
   dialModeOrder: DialMode[];
   state: ControlState;
+  secureInput: SecureInputHolder | null;
   herdrConnected: boolean;
   configError: string | null;
   slots: (SlotStatus | null)[];

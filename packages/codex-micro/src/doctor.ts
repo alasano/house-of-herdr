@@ -9,6 +9,7 @@ import { chatGptRunning } from "./chatgpt.js";
 import { daemonAlive, sendCommand } from "./control.js";
 import { classifyOpenError, findCandidates } from "./device.js";
 import { socketPath } from "./herdr.js";
+import { describeSecureInput, secureInputHolder } from "./secure-input.js";
 
 const check = (name: string, ok: boolean, detail: string) =>
   console.log(`${ok ? "✓" : "✗"} ${name}: ${detail}`);
@@ -101,6 +102,15 @@ async function checkDevice(): Promise<void> {
     guidance[classifyOpenError(message)] ?? `open failed: ${message}`,
   );
 }
+
+// Secure Keyboard Entry blocks raw HID access with every grant in place, and
+// with the same "not permitted" code a missing grant produces.
+const secureInput = await secureInputHolder();
+check(
+  "secure keyboard entry",
+  secureInput === null,
+  secureInput ? describeSecureInput(secureInput) : "off",
+);
 
 // Accessibility (needed for global key and scroll event synthesis).
 const tapkey = fileURLToPath(new URL("../bin/tapkey", import.meta.url));
