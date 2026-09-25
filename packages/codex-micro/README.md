@@ -81,11 +81,12 @@ the first reverse detent acts as a brake: it cancels the old direction and
 briefly ignores new ticks before scrolling back.
 
 Bindings come in two flavors. **Herdr-side** bindings (the presets plus
-`herdr-key` / `herdr-text`) go through Herdr's API to the focused pane and
-need no macOS permissions. **Global** bindings (`key`) press a real key in
-whatever app is frontmost and require the Accessibility permission. For
-example, a dictation hotkey on the mic bar, and swapping the CODEX key from
-the default Herdr-side Enter to a global one that submits in any app:
+`herdr-key`, `herdr-text`, and `herdr-prompt`) go through Herdr's API and need
+no macOS permissions. `herdr-prompt` submits a prompt to the agent in the
+focused pane; `herdr-text` only types text. **Global** bindings (`key`) press
+a real key in whatever app is frontmost and require the Accessibility
+permission. For example, bind a dictation hotkey to the mic bar, or change the
+CODEX key from Herdr-side Enter to a global key:
 
 ```json
 {
@@ -160,10 +161,11 @@ the session that started it.
 
 ## Notes
 
-The device controls Herdr whether Herdr's window is focused or not: the
-dial switches workspaces and the CODEX key submits in Herdr's focused pane
-even while you are in another app. Herdr-side Enter only ever lands inside
-Herdr, but it can submit a prompt in a pane you are not looking at.
+The device controls Herdr whether Herdr's window is focused or not. A
+`herdr-prompt` binding submits directly to the agent in Herdr's focused pane,
+even when Herdr is in the background. The default CODEX key sends Enter to the
+focused pane. Use `herdr-prompt` to target the focused agent through Herdr's
+prompt API instead.
 
 ## Verifying the key helper
 

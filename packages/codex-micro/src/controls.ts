@@ -2,6 +2,7 @@
 // every other input runs its configured binding. Presets call Herdr's socket
 // API; `key` bindings mirror physical press/release as synthetic macOS
 // keystrokes; `herdr-key`/`herdr-text` inject into Herdr's focused pane;
+// `herdr-prompt` submits text to the focused agent;
 // `exec` spawns a command on press.
 import { spawn } from "node:child_process";
 import { postKey, type KeyMode } from "./tapkey.js";
@@ -193,6 +194,9 @@ export class Controls {
       case "herdr-text":
         void this.sendToFocusedPane("pane.send_text", { text: binding.text });
         break;
+      case "herdr-prompt":
+        void this.promptFocusedAgent(binding.text);
+        break;
       case "exec":
         this.execCommand(binding.argv);
         break;
@@ -374,6 +378,20 @@ export class Controls {
       await this.herdr.request(method, { pane_id: pane.pane_id, ...params });
     } catch (error) {
       this.log(`${method} failed: ${(error as Error).message}`);
+    }
+  }
+
+  private async promptFocusedAgent(text: string): Promise<void> {
+    try {
+      const current = await this.herdr.request("pane.current", {});
+      const pane = current.pane as { pane_id?: string } | undefined;
+      if (!pane?.pane_id) return;
+      await this.herdr.request("agent.prompt", {
+        target: pane.pane_id,
+        text,
+      });
+    } catch (error) {
+      this.log(`agent prompt failed: ${(error as Error).message}`);
     }
   }
 

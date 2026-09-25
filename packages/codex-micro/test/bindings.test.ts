@@ -67,7 +67,7 @@ describe("resolveBindings", () => {
       ACT06: "zoom",
       ACT07: { "herdr-key": "ctrl+c" },
       ACT08: { "herdr-text": "continue" },
-      ACT09: { exec: ["open", "x-app://run"] },
+      ACT09: { "herdr-prompt": "continue now" },
       ACT10: "none",
     });
     expect(bindings.buttons.ACT06).toEqual({ kind: "preset", preset: "zoom" });
@@ -80,8 +80,8 @@ describe("resolveBindings", () => {
       text: "continue",
     });
     expect(bindings.buttons.ACT09).toEqual({
-      kind: "exec",
-      argv: ["open", "x-app://run"],
+      kind: "herdr-prompt",
+      text: "continue now",
     });
     expect(bindings.buttons.ACT10).toEqual({ kind: "none" });
   });

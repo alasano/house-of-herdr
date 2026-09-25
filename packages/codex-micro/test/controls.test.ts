@@ -224,6 +224,25 @@ describe("dial modes", () => {
   });
 });
 
+describe("prompt bindings", () => {
+  it("submits text to the focused agent", async () => {
+    const { controls, herdr } = setup(
+      resolveBindings({ ACT06: { "herdr-prompt": "/plannotator-review" } }),
+    );
+    herdr.request.mockImplementation(async (method: string) =>
+      method === "pane.current" ? { pane: { pane_id: "focused-pane" } } : {},
+    );
+
+    controls.onHid("ACT06", 1);
+    await vi.waitFor(() =>
+      expect(herdr.request).toHaveBeenCalledWith("agent.prompt", {
+        target: "focused-pane",
+        text: "/plannotator-review",
+      }),
+    );
+  });
+});
+
 describe("agent keys", () => {
   it("focuses the slotted agent on press only", () => {
     const { controls, herdr } = setup();

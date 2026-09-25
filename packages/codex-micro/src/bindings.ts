@@ -29,6 +29,7 @@ export type Binding =
   | { kind: "key"; combo: KeyCombo; hold: boolean }
   | { kind: "herdr-key"; keys: string }
   | { kind: "herdr-text"; text: string }
+  | { kind: "herdr-prompt"; text: string }
   | { kind: "exec"; argv: string[] }
   | { kind: "none" };
 
@@ -63,7 +64,13 @@ export interface Bindings {
 const NONE: Binding = { kind: "none" };
 const preset = (name: Preset): Binding => ({ kind: "preset", preset: name });
 
-const BINDING_KEYS = ["key", "herdr-key", "herdr-text", "exec"] as const;
+const BINDING_KEYS = [
+  "key",
+  "herdr-key",
+  "herdr-text",
+  "herdr-prompt",
+  "exec",
+] as const;
 
 export function defaultBindings(): Bindings {
   return {
@@ -152,6 +159,12 @@ function parseBinding(
     ) {
       return { kind: "herdr-text", text: record["herdr-text"] };
     }
+    if (
+      typeof record["herdr-prompt"] === "string" &&
+      record["herdr-prompt"].length > 0
+    ) {
+      return { kind: "herdr-prompt", text: record["herdr-prompt"] };
+    }
     if (Array.isArray(record.exec) && record.exec.length > 0) {
       if (!record.exec.every((arg) => typeof arg === "string")) {
         throw new Error(`bindings.${entry}: exec must be an array of strings`);
@@ -165,7 +178,7 @@ function parseBinding(
     }
   }
   throw new Error(
-    `bindings.${entry}: expected a preset name, {"key"}, {"herdr-key"}, {"herdr-text"}, or {"exec"}`,
+    `bindings.${entry}: expected a preset name, {"key"}, {"herdr-key"}, {"herdr-text"}, {"herdr-prompt"}, or {"exec"}`,
   );
 }
 

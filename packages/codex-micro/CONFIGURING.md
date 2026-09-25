@@ -48,6 +48,7 @@ where `<binding>` is one of:
 { "key": "cmd+shift+p" }            press a real key globally
 { "herdr-key": "esc" }              send a key to Herdr's focused pane
 { "herdr-text": "continue" }        type text into Herdr's focused pane
+{ "herdr-prompt": "continue" }      submit a prompt to Herdr's focused agent
 { "exec": ["open", "x-app://x"] }   run a command
 ```
 
@@ -146,7 +147,9 @@ directions keep pane navigation.
    even when Herdr is not the frontmost app; no permissions). Uses Herdr's
    key grammar: `esc`, `enter`, `ctrl+c`, `shift+tab`, `f1`, ...
 4. **`{"herdr-text": "..."}`**: type literal text into Herdr's focused pane.
-5. **`{"exec": ["cmd", "arg", ...]}`**: run a command on press (argv, no
+5. **`{"herdr-prompt": "..."}`**: submit literal text with `agent.prompt` to
+   the agent in Herdr's focused pane. Herdr rejects prompts to blocked agents.
+6. **`{"exec": ["cmd", "arg", ...]}`**: run a command on press (argv, no
    shell). Anything the `herdr` CLI can do fits here. The first element is
    the command and must not be empty.
 
@@ -166,6 +169,12 @@ A button that tells the focused agent to continue:
 
 ```json
 { "bindings": { "ACT12": { "herdr-text": "continue" } } }
+```
+
+A button that submits a prompt to the focused agent:
+
+```json
+{ "bindings": { "ACT12": { "herdr-prompt": "/plannotator-review" } } }
 ```
 
 Joystick up runs a command (here, opening an app's URL scheme); the other
