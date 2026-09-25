@@ -29,6 +29,7 @@ export const LOG_FILE = path.join(stateDir, "daemon.log");
 
 export interface Config {
   policy: Policy;
+  activateTerminalOnAgentFocus: boolean;
   scrollSteps: number;
   dialModeOrder: DialMode[];
   bindings: Bindings;
@@ -42,6 +43,10 @@ export function loadConfig(): Config {
   const raw = readRawConfig();
   return {
     policy: resolvePolicy(raw.policy),
+    activateTerminalOnAgentFocus: resolveBoolean(
+      raw.activateTerminalOnAgentFocus,
+      "activateTerminalOnAgentFocus",
+    ),
     scrollSteps: resolveScrollSteps(raw.scroll_steps),
     dialModeOrder: resolveDialModeOrder(raw.dial_mode_order),
     bindings: resolveBindings(raw.bindings),
@@ -74,6 +79,14 @@ function resolvePolicy(value: unknown): Policy {
   if (value === "sticky" || value === "mirror") return value;
   throw new Error(
     `policy: expected "sticky" or "mirror", got ${JSON.stringify(value)}`,
+  );
+}
+
+function resolveBoolean(value: unknown, name: string): boolean {
+  if (value === undefined) return false;
+  if (typeof value === "boolean") return value;
+  throw new Error(
+    `${name}: expected true or false, got ${JSON.stringify(value)}`,
   );
 }
 

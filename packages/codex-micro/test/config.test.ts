@@ -42,6 +42,7 @@ describe("loadConfig", () => {
     write(
       JSON.stringify({
         policy: "mirror",
+        activateTerminalOnAgentFocus: true,
         scroll_steps: 3,
         dial_mode_order: ["scroll", "workspaces", "agents"],
         bindings: { ACT10: "zoom" },
@@ -49,6 +50,7 @@ describe("loadConfig", () => {
     );
     const config = loadConfig();
     expect(config.policy).toBe("mirror");
+    expect(config.activateTerminalOnAgentFocus).toBe(true);
     expect(config.scrollSteps).toBe(3);
     expect(config.dialModeOrder).toEqual(["scroll", "workspaces", "agents"]);
     expect(config.bindings.buttons.ACT10).toEqual({
@@ -72,6 +74,13 @@ describe("loadConfig", () => {
   it("rejects an unknown policy rather than coercing it", () => {
     write(JSON.stringify({ policy: "banana" }));
     expect(() => loadConfig()).toThrow(/policy: expected "sticky" or "mirror"/);
+  });
+
+  it("rejects a non-boolean terminal activation setting", () => {
+    write(JSON.stringify({ activateTerminalOnAgentFocus: "yes" }));
+    expect(() => loadConfig()).toThrow(
+      /activateTerminalOnAgentFocus: expected true or false/,
+    );
   });
 
   it("accepts the scroll step boundaries", () => {

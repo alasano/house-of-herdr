@@ -4,6 +4,7 @@
 // clears the LEDs, releases the device, and exits.
 import { chatGptRunning } from "./chatgpt.js";
 import { CodexMicro } from "./device.js";
+import { spawn } from "node:child_process";
 import {
   HerdrClient,
   HerdrError,
@@ -57,6 +58,31 @@ function log(message: string): void {
   console.log(`${new Date().toISOString()} ${message}`);
 }
 
+function activateTerminalWindow(): Promise<void> {
+  const bundleId = process.env.__CFBundleIdentifier;
+  if (!bundleId) {
+    return Promise.reject(
+      new Error("Terminal activation failed: __CFBundleIdentifier is unset"),
+    );
+  }
+  const escapedBundleId = bundleId
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"');
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "osascript",
+      ["-e", `tell application id "${escapedBundleId}" to activate`],
+      { stdio: "ignore" },
+    );
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else
+        reject(new Error(`Terminal activation failed with exit code ${code}`));
+    });
+  });
+}
+
 function shortenHome(path: string): string {
   const home = process.env.HOME;
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
@@ -73,6 +99,7 @@ function atMost(work: Promise<unknown>, ms: number): Promise<unknown> {
 class Daemon {
   private herdr = new HerdrClient();
   private policy: Policy = "sticky";
+  private activateTerminalOnAgentFocus = false;
   private scrollSteps = 1;
   private dialModeOrder: DialMode[] = [...DEFAULT_DIAL_MODE_ORDER];
   private bindings: Bindings = defaultBindings();
@@ -128,6 +155,10 @@ class Daemon {
       scrollSteps: () => this.scrollSteps,
       dialModeOrder: () => this.dialModeOrder,
       slotPaneId: (slot) => this.agentForSlot(slot)?.pane_id ?? null,
+      activateTerminalWindow: () =>
+        this.activateTerminalOnAgentFocus
+          ? activateTerminalWindow()
+          : Promise.resolve(),
       togglePopup: () => void this.togglePopup(),
       togglePolicy: () => this.togglePolicy(),
       onDialModeChange: (mode) => this.onDialModeChange(mode),
@@ -178,6 +209,7 @@ class Daemon {
       const config = loadConfig();
       const policyChanged = config.policy !== this.policy;
       this.policy = config.policy;
+      this.activateTerminalOnAgentFocus = config.activateTerminalOnAgentFocus;
       this.scrollSteps = config.scrollSteps;
       this.dialModeOrder = config.dialModeOrder;
       this.bindings = config.bindings;

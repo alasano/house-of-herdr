@@ -44,6 +44,7 @@ export interface ControlDeps {
   scrollSteps(): number;
   dialModeOrder(): readonly DialMode[];
   slotPaneId(slot: number): string | null;
+  activateTerminalWindow(): Promise<void>;
   togglePopup(): void;
   togglePolicy(): void;
   onDialModeChange(mode: DialMode): void;
@@ -296,10 +297,19 @@ export class Controls {
     }
   }
 
-  private focusSlot(slot: number): void {
+  private async focusSlot(slot: number): Promise<void> {
     const paneId = this.deps.slotPaneId(slot);
     if (!paneId) return;
-    this.run("agent.focus", { target: paneId });
+    try {
+      await this.deps.activateTerminalWindow();
+    } catch (error) {
+      this.log(`terminal activation failed: ${(error as Error).message}`);
+    }
+    try {
+      await this.herdr.request("agent.focus", { target: paneId });
+    } catch (error) {
+      this.log(`agent focus failed: ${(error as Error).message}`);
+    }
   }
 
   private async stepWorkspace(step: 1 | -1): Promise<void> {

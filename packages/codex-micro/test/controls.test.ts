@@ -27,6 +27,7 @@ function setup(
     scrollSteps: () => 1,
     dialModeOrder: () => dialModeOrder,
     slotPaneId: (slot: number) => `pane-${slot}`,
+    activateTerminalWindow: vi.fn(async () => {}),
     togglePopup: vi.fn(),
     togglePolicy: vi.fn(),
     onDialModeChange: vi.fn(),
@@ -225,14 +226,35 @@ describe("dial modes", () => {
 });
 
 describe("agent keys", () => {
-  it("focuses the slotted agent on press only", () => {
-    const { controls, herdr } = setup();
+  it("activates the terminal before it focuses the slotted agent", async () => {
+    const { controls, herdr, deps } = setup();
+    const order: string[] = [];
+    deps.activateTerminalWindow.mockImplementation(async () => {
+      order.push("activate");
+    });
+    herdr.request.mockImplementation(async () => {
+      order.push("focus");
+      return {};
+    });
+
     controls.onHid("AG02", 1);
     controls.onHid("AG02", 0);
-    expect(herdr.request).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(order).toEqual(["activate", "focus"]));
     expect(herdr.request).toHaveBeenCalledWith("agent.focus", {
       target: "pane-2",
     });
+  });
+
+  it("focuses the agent when terminal activation fails", async () => {
+    const { controls, herdr, deps, logs } = setup();
+    deps.activateTerminalWindow.mockRejectedValue(new Error("no terminal"));
+    controls.onHid("AG02", 1);
+    await vi.waitFor(() =>
+      expect(herdr.request).toHaveBeenCalledWith("agent.focus", {
+        target: "pane-2",
+      }),
+    );
+    expect(logs).toContain("terminal activation failed: no terminal");
   });
 });
 
