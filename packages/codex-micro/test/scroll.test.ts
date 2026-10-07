@@ -35,6 +35,8 @@ const TERMINAL_ENV_KEYS = [
   "TERM_PROGRAM",
   "KITTY_WINDOW_ID",
   "ALACRITTY_WINDOW_ID",
+  "GHOSTTY_RESOURCES_DIR",
+  "GHOSTTY_BIN_DIR",
 ] as const;
 
 async function inTerminalEnv(
@@ -85,6 +87,71 @@ describe("HerdrScroller", () => {
       expect(postFallbackScroll).not.toHaveBeenCalled();
       expect(herdr.request).not.toHaveBeenCalled();
     }));
+
+  it.each([
+    [
+      {
+        TERM_PROGRAM: "herdr",
+        GHOSTTY_RESOURCES_DIR:
+          "/Applications/Ghostty.app/Contents/Resources/ghostty",
+      },
+      "Ghostty",
+    ],
+    [
+      {
+        TERM_PROGRAM: "herdr",
+        GHOSTTY_BIN_DIR: "/Applications/Ghostty.app/Contents/MacOS",
+      },
+      "Ghostty",
+    ],
+    [
+      {
+        TERM_PROGRAM: "herdr",
+        GHOSTTY_RESOURCES_DIR: "/ghostty",
+        KITTY_WINDOW_ID: "1",
+      },
+      "kitty",
+    ],
+    [
+      {
+        TERM_PROGRAM: "herdr",
+        GHOSTTY_RESOURCES_DIR: "/ghostty",
+        ALACRITTY_WINDOW_ID: "1",
+      },
+      "Alacritty",
+    ],
+    [{ TERM_PROGRAM: "herdr" }, null],
+    [{ TERM_PROGRAM: "unknown", GHOSTTY_RESOURCES_DIR: "/ghostty" }, null],
+  ] as const)("detects the host for environment %j", (env, owner) =>
+    inTerminalEnv(env, async () => {
+      const herdr = { sessionSnapshot: vi.fn(async () => snapshot()) };
+      const postHostScroll = vi.fn(completedOperation);
+      const postFallbackScroll = vi.fn(completedOperation);
+      const log = vi.fn();
+      const scroller = new HerdrScroller(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        herdr as any,
+        log,
+        () => 1,
+        postHostScroll,
+        postFallbackScroll,
+      );
+      await scroller.scroll("up");
+      if (owner) {
+        expect(postHostScroll).toHaveBeenCalledWith(
+          1,
+          73.5 / 215,
+          31 / 61,
+          owner,
+          log,
+        );
+        expect(postFallbackScroll).not.toHaveBeenCalled();
+      } else {
+        expect(postHostScroll).not.toHaveBeenCalled();
+        expect(postFallbackScroll).toHaveBeenCalledWith(1, log);
+      }
+    }),
+  );
 
   it("prefers the terminal's own env var over an inherited TERM_PROGRAM", () =>
     inTerminalEnv(

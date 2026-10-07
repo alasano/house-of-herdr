@@ -10,7 +10,7 @@
 
 ### [codex-micro](packages/codex-micro)
 
-Use your Work Louder Codex Micro (OpenAI edition) natively with Herdr: the six Agent Keys light up with live agent statuses, and the dial, joystick, and command keys control Herdr.
+Use your Work Louder Codex Micro (OpenAI edition) or Creator Micro 2 natively with Herdr: the six Agent Keys light up with live agent statuses, and the dial, joystick, and command keys control Herdr.
 
 <p align="center">
   <img src="packages/codex-micro/assets/codex-micro.png" width="768" alt="codex-micro" />

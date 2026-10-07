@@ -4,7 +4,8 @@
   <img src="assets/codex-micro.png" width="768" alt="Codex Micro running the Herdr layer" />
 </p>
 
-Use your Work Louder Codex Micro (OpenAI edition) natively with [Herdr](https://herdr.dev):
+Use your Work Louder Codex Micro (OpenAI edition) or Creator Micro 2 natively
+with [Herdr](https://herdr.dev):
 
 - The six Agent Keys light up with live agent statuses and focus their agent on press.
 - The dial, joystick, and command keys control Herdr: workspaces, panes, tabs, and more.
@@ -18,6 +19,31 @@ Use your Work Louder Codex Micro (OpenAI edition) natively with [Herdr](https://
 > automatically and reclaims it when the app quits.
 
 **Requirements**: macOS ≥ 14, Herdr ≥ 0.7.5, Node ≥ 22.
+
+## Supported devices
+
+| Device                       | USB vendor / product ID |
+| ---------------------------- | ----------------------- |
+| Codex Micro (OpenAI edition) | `303a:8360`             |
+| Creator Micro 2              | `303a:8298`             |
+
+Both use the existing vendor HID interface and Codex RPC transport. The
+package name, plugin ID (`alasano.codex-micro`), install path and saved
+configuration stay the same for either device; no firmware flashing is needed.
+
+**Select layer 1 for live agent feedback.** On Creator Micro 2, other layers
+can show their own lighting while ignoring agent-status and ring commands.
+Opaque stock caps obscure the per-key LEDs; translucent caps make status
+feedback easier to see. The plugin does not overwrite your Input profiles or
+automatically change layers.
+
+Creator Micro 2 was physically checked over **USB** with macOS 27 and Herdr
+0.9.3: all six status-key positions, breathing effect, dial ring modes,
+key/dial/joystick input, agent focus, workspace/pane/tab navigation,
+Herdr-side Enter/Escape, popup, unbound keys and scrolling. Creator Bluetooth
+and a Codex-edition physical regression run were not tested in that check;
+shared transport and discovery behavior for both models have automated tests.
+Device firmware version was not queried.
 
 ## Install
 
@@ -40,8 +66,12 @@ macOS requires manual grants in **System Settings → Privacy & Security**:
 
 - **Input Monitoring**, required: grant it to the app you run Herdr in
   (Ghostty, kitty, iTerm, ...).
-- **Accessibility**, for global `{"key": ...}` bindings and dial scrolling.
-  Herdr-side bindings do not need it.
+- **Accessibility** (called **Device Control and Data Access** on newer
+  macOS), for global `{"key": ...}` bindings and dial scrolling. Herdr-side
+  bindings do not need it.
+
+Full Disk Access, Automation and Screen Recording are not required by this
+plugin.
 
 Verify everything with `node dist/doctor.js` from the plugin directory; it
 names exactly what is missing. If the daemon logs `privilege violation`
@@ -59,8 +89,11 @@ after an automatic start, launch it once from your terminal
 | ACT06          | Toggle the key-map popup                                  |
 | ACT07          | Send Escape to Herdr's focused pane (interrupt the agent) |
 | ACT08 / ACT09  | Previous / next tab                                       |
-| ACT10          | Unbound; bind your dictation hotkey                       |
+| ACT10 / ACT11  | Unbound; bind your dictation hotkey                       |
 | ACT12          | Send Enter to Herdr's focused pane (submit), not globally |
+
+The key-map popup fits the available terminal size, retaining the physical
+key arrangement where possible and using a compact list in small panes.
 
 Every control except the six Agent Keys is remappable through the config:
 ask your agent to read [CONFIGURING.md](CONFIGURING.md) to customize keys or
@@ -69,11 +102,13 @@ instantly, no restart.
 
 The default order is workspaces, agents, then scroll; set `dial_mode_order` to
 change both the startup mode and click order. The ring is off in workspace
-mode, blue in agent mode, and purple in scroll mode. In scroll mode, turn
+mode, blue in agent mode, and orange in scroll mode. In scroll mode, turn
 counter-clockwise to scroll up and clockwise to scroll down. When
 Ghostty/Herdr is frontmost it targets Herdr's keyboard-focused pane regardless
 of its initial pointer position; Ghostty requires moving the pointer to that
-pane before it will route the wheel gesture there. In other apps it scrolls
+pane before it will route the wheel gesture there. Herdr may set
+`TERM_PROGRAM=herdr`; the plugin also recognizes Ghostty's inherited host
+markers in that environment. In other apps it scrolls
 beneath the pointer like a normal wheel. Set `scroll_steps` from 1 to 12 in the
 plugin config to tune how much each detent moves; changes apply live. See
 [CONFIGURING.md](CONFIGURING.md) for details. With scroll work still buffered,
@@ -148,6 +183,21 @@ rows = [
   ["agent"],
 ]
 ```
+
+## Pi and other agents
+
+Agent identity and status come from Herdr's `agent.list` and
+`pane.agent_status_changed` events, not from a separate Micro-specific pi
+extension. With Herdr's existing pi integration, working, idle and unseen
+completion states were observed reaching the assigned device slot.
+
+Check `herdr integration status` if pi's state is stale. Pi attention reporting
+also depends on the installed integration and extension emitting the
+`herdr:blocked` event; arbitrary question dialogs are not automatically proven
+to report blocked. End-to-end pi attention-dialog behavior was not exercised
+in the Creator smoke test, although amber lighting was physically verified.
+Updating Herdr's managed integration is a separate setup task, not something
+this plugin does automatically.
 
 ## Daemon
 

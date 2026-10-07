@@ -4,7 +4,8 @@ import { SLOT_COUNT, type AgentStatus } from "./slots.js";
 
 const EFFECT = { off: 0, solid: 1, breath: 4 } as const;
 
-// Preserve the original workspace/agent indicators and add purple for scroll.
+// Distinct dial-mode indicators: off for workspaces, blue for agents,
+// orange for scroll so it cannot be confused with a purple ambient effect.
 export const RING_AGENTS: LightingSide = {
   e: 1,
   b: 0.5,
@@ -17,7 +18,7 @@ export const RING_SCROLL: LightingSide = {
   b: 0.5,
   s: 0,
   m: 0,
-  c: 0xaa55ff,
+  c: 0xff8800,
 };
 export const RING_OFF: LightingSide = { e: 0, b: 0, s: 0, m: 0, c: 0 };
 

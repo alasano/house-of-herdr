@@ -2,7 +2,7 @@
   "name": "@house-of-herdr/codex-micro",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent status lights and controls on the Work Louder Codex Micro",
+  "description": "Agent status lights and controls on the Work Louder Codex Micro and Creator Micro 2",
   "type": "module",
   "scripts": {
     "build": "rm -rf dist && tsc",

@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import { HIDAsync } from "node-hid";
 import { chatGptRunning } from "./chatgpt.js";
 import { daemonAlive, sendCommand } from "./control.js";
-import { classifyOpenError, findCandidates } from "./device.js";
+import {
+  CREATOR_PRODUCT_ID,
+  classifyOpenError,
+  findCandidates,
+} from "./device.js";
 import { socketPath } from "./herdr.js";
 
 const check = (name: string, ok: boolean, detail: string) =>
@@ -69,7 +73,7 @@ async function checkDevice(): Promise<void> {
     check(
       "device",
       false,
-      "Codex Micro not found; check power, USB, or Bluetooth",
+      "Codex Micro / Creator Micro 2 not found; check power and connection",
     );
     return;
   }
@@ -81,7 +85,7 @@ async function checkDevice(): Promise<void> {
       check(
         "device",
         true,
-        "present and openable (Input Monitoring OK for this terminal)",
+        `${info.productId === CREATOR_PRODUCT_ID ? "Creator Micro 2" : "Codex Micro"} present and openable (Input Monitoring OK for this terminal); select layer 1 for live agent lighting`,
       );
       return;
     } catch (error) {
@@ -93,7 +97,8 @@ async function checkDevice(): Promise<void> {
     permission_required:
       "open denied: grant Input Monitoring (System Settings → Privacy & Security) to this terminal and to whatever launches the daemon",
     device_busy: "another process holds the device exclusively (ChatGPT app?)",
-    device_absent: "Codex Micro not found; check power, USB, or Bluetooth",
+    device_absent:
+      "Codex Micro / Creator Micro 2 not found; check power and connection",
   };
   check(
     "device",
@@ -114,7 +119,7 @@ check(
   axGranted,
   axGranted
     ? "granted (used for global key bindings and scrolling)"
-    : "not granted; needed for global key bindings and scrolling (System Settings → Privacy & Security → Accessibility)",
+    : "not granted; needed for global key bindings and scrolling (System Settings → Privacy & Security → Accessibility, called Device Control and Data Access on newer macOS)",
 );
 
 // Does the committed helper actually speak the scroll grammar? A binary that

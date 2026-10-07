@@ -39,7 +39,18 @@ function terminalWindowOwner(): string | null {
   // through untouched, so their own variables must win over a stale one.
   if (process.env.KITTY_WINDOW_ID) return "kitty";
   if (process.env.ALACRITTY_WINDOW_ID) return "Alacritty";
-  return WINDOW_OWNERS[(process.env.TERM_PROGRAM ?? "").toLowerCase()] ?? null;
+  const program = (process.env.TERM_PROGRAM ?? "").toLowerCase();
+  // Herdr 0.9.3 replaces TERM_PROGRAM inside its panes. Ghostty's own
+  // markers survive, so recover the host rather than scrolling at the
+  // pointer. Restrict this fallback to Herdr to avoid misidentifying a
+  // different nested terminal that inherited Ghostty's environment.
+  if (
+    program === "herdr" &&
+    (process.env.GHOSTTY_RESOURCES_DIR || process.env.GHOSTTY_BIN_DIR)
+  ) {
+    return "Ghostty";
+  }
+  return WINDOW_OWNERS[program] ?? null;
 }
 
 function focusedTarget(snapshot: SessionSnapshot): PaneTarget | null {

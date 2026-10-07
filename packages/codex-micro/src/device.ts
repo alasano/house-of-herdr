@@ -1,4 +1,4 @@
-// Connection to the physical Codex Micro: discovery, fire-and-forget vendor
+// Connection to the physical Codex Micro / Creator Micro 2: discovery, fire-and-forget vendor
 // RPC, notifications, and reconnect. The ChatGPT app seizes the device
 // exclusively while running, so open failures are expected and retried;
 // quitting it hands the device over on the next retry.
@@ -7,6 +7,8 @@ import { CHANNEL_RPC, Reassembler, encodeMessage } from "./framing.js";
 
 export const VENDOR_ID = 0x303a;
 export const PRODUCT_ID = 0x8360;
+export const CREATOR_PRODUCT_ID = 0x8298;
+const PRODUCT_IDS = new Set([PRODUCT_ID, CREATOR_PRODUCT_ID]);
 export const USAGE_PAGE = 0xff00;
 const RECONNECT_MIN_MS = 3000;
 const RECONNECT_JITTER_MS = 5000;
@@ -63,7 +65,7 @@ export async function findCandidates(): Promise<Device[]> {
   return devices.filter(
     (d) =>
       d.vendorId === VENDOR_ID &&
-      d.productId === PRODUCT_ID &&
+      PRODUCT_IDS.has(d.productId) &&
       d.usagePage === USAGE_PAGE &&
       d.path,
   );

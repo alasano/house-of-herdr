@@ -102,7 +102,7 @@ directions keep pane navigation.
 
    The dial starts with the first entry in `dial_mode_order` (workspace mode
    by default). Its ambient ring is off in workspace mode, blue in agent mode,
-   and purple in scroll mode. When Ghostty/Herdr is frontmost,
+   and orange in scroll mode. When Ghostty/Herdr is frontmost,
    scroll mode targets Herdr's keyboard-focused pane regardless of pointer
    position, moving the pointer there first because Ghostty routes wheel input
    using its last cursor position. In other apps it scrolls beneath the pointer
